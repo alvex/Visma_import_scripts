@@ -1,0 +1,37 @@
+{
+  "fields": {
+    "Kund ID": {
+      "x_ratio": 0.0367,
+      "y_offset": 97,
+      "ctrl_class": "Edit",
+      "ctrl_rel_rect": [
+        59,
+        87,
+        457,
+        110
+      ]
+    },
+    "Bokf.dag": {
+      "x_ratio": 0.3011,
+      "y_offset": 123,
+      "ctrl_class": "Edit",
+      "ctrl_rel_rect": [
+        568,
+        113,
+        955,
+        136
+      ]
+    },
+    "Fak.belopp": {
+      "x_ratio": 0.7805,
+      "y_offset": 123,
+      "ctrl_class": "Edit",
+      "ctrl_rel_rect": [
+        1505,
+        113,
+        1909,
+        136
+      ]
+    }
+  }
+}
