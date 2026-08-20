@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "window_title": "Visma Compact 6 - 556871-0262 HemFresh AB [25-09 - 26-08] - [Inbetalningar]",
+  "window_width": 1936,
+  "window_height": 1082,
+  "fields": {
+    "betdag": [
+      441,
+      135
+    ],
+    "faktnr": [
+      451,
+      185
+    ]
+  }
+}

@@ -1,0 +1,45 @@
+Control Identifiers:
+
+Dialog - 'Rätt belopp?'    (L864, T437, R1080, B645)
+['Dialog', 'Rätt belopp?Dialog', 'Rätt belopp?']
+child_window(title="Rätt belopp?", class_name="#32770")
+   | 
+   | Static - 'Kund 650505-1059'    (L878, T468, R1066, B481)
+   | ['Kund 650505-1059Static', 'Static', 'Kund 650505-1059', 'Static0', 'Static1']
+   | child_window(title="Kund 650505-1059", class_name="Static")
+   | 
+   | Static - 'FA 49561'    (L878, T489, R1066, B502)
+   | ['FA 49561Static', 'Static2', 'FA 49561']
+   | child_window(title="FA 49561", class_name="Static")
+   | 
+   | Static - 'Ändra till:'    (L878, T513, R949, B526)
+   | ['Ändra till:', 'Static3', 'Ändra till:Static']
+   | child_window(title="Ändra till:", class_name="Static")
+   | 
+   | Edit - '2 881,00'    (L950, T510, R1070, B531)
+   | ['Ändra till:Edit', 'Edit', 'Edit0', 'Edit1']
+   | child_window(title="2 881,00", class_name="Edit")
+   | 
+   | Static - 'Info:'    (L878, T538, R949, B551)
+   | ['Info:Static', 'Static4', 'Info:', 'Info:Static0', 'Info:Static1']
+   | child_window(title="Info:", class_name="Static")
+   | 
+   | Static - ''    (L950, T538, R1070, B551)
+   | ['Info:Static2', 'Static5']
+   | child_window(class_name="Static")
+   | 
+   | Static - ''    (L878, T562, R1037, B575)
+   | ['Info:Static3', 'Static6']
+   | child_window(class_name="Static")
+   | 
+   | Edit - ''    (L878, T580, R1070, B601)
+   | ['Info:Edit', 'Edit2']
+   | child_window(class_name="Edit")
+   | 
+   | Button - '&Ok'    (L912, T611, R987, B634)
+   | ['&Ok', '&OkButton', 'Button', 'Button0', 'Button1']
+   | child_window(title="&Ok", class_name="Button")
+   | 
+   | Button - '&Avbryt'    (L995, T611, R1070, B634)
+   | ['&AvbrytButton', '&Avbryt', 'Button2']
+   | child_window(title="&Avbryt", class_name="Button")
