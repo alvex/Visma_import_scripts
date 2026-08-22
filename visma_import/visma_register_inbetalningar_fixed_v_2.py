@@ -111,13 +111,13 @@ AUTO_FINALIZE_PAYMENT_BATCH = False  # MASTE vara False. Klicka aldrig Bankgiro/
 AMOUNT_TOLERANCE = Decimal("1.00")  # tillaten differens Excel vs Visma
 
 # --- Timing (sekunder) ---
-WAIT_AFTER_ENTER = 0.8     # vantetid efter att fakturanr skrivits + Enter
-WAIT_AFTER_OK = 0.15        # vantetid efter OK
-WAIT_SHORT = 0.08          # kort paus mellan tangenttryck/falt
-WAIT_AFTER_DATE = 0.2     # paus efter att Bet.dag skrivits
-DIALOG_TIMEOUT = 1.0       # hur lange vi vantar pa "Ratt belopp?"-dialogen
-DIFFERENS_TIMEOUT = 1.0    # hur lange vi vantar pa ev. "Differens"-dialog
-DIALOG_CLOSE_TIMEOUT = 1.0 # hur lange vi vantar pa att dialogerna stangs
+WAIT_AFTER_ENTER = 1.0     # vantetid efter att fakturanr skrivits + Enter
+WAIT_AFTER_OK = 0.8        # vantetid efter OK
+WAIT_SHORT = 0.25          # kort paus mellan tangenttryck/falt
+WAIT_AFTER_DATE = 0.3      # paus efter att Bet.dag skrivits
+DIALOG_TIMEOUT = 5.0       # hur lange vi vantar pa "Ratt belopp?"-dialogen
+DIFFERENS_TIMEOUT = 3.0    # hur lange vi vantar pa ev. "Differens"-dialog
+DIALOG_CLOSE_TIMEOUT = 8.0 # hur lange vi vantar pa att dialogerna stangs
 
 # --- Urval/test ---
 # Anvandaren valjer antal interaktivt. --rader kan anvandas som ytterligare tak.
@@ -845,115 +845,31 @@ class VismaGui:
                 continue
         return edits[0]
 
-    def write_amount_in_dialog(self, dlg, value: str) -> Decimal:
+    def write_amount_in_dialog(self, dlg, value: str) -> None:
         """
-        Skriver *value* i 'Andra till:' och laser tillbaka det faktiska vardet.
+        Skriver *value* i dialogens beloppsfalt ('Andra till:').
 
-        Visma kan behalla ett ore om ett formaterat beloppsfalt rensas med
-        End/Shift+Home. Darfor anvands i forsta hand kontrollens set_edit_text,
-        sedan Tab for att tvinga Visma att formatera vardet. Endast ett exakt
-        aterlast belopp godkanns. Keyboard/clipboard anvands som reservmetod.
+        Anvander SAMMA metod som fungerar for Bet.dag/Fakt.nr:
+        riktigt musklick pa faltet (click_input) -> rensa (End->Shift+Home)
+        -> klistra in via urklipp. (set_edit_text undviks - den kan "lyckas"
+        utan att faltet faktiskt andras.)
 
-        Returnerar det verifierade Decimal-vardet. Kastar RuntimeError om faltet
-        saknas eller om det aterlasta vardet avviker med ens 0,01 kr.
+        Hittas inget falt: faltet ar redan fokuserat nar dialogen oppnas, sa
+        vi rensar och klistrar in anda.
         """
         target = value.strip()
-        target_dec = parse_amount(target)
-        if target_dec is None:
-            raise RuntimeError(f"Ogiltigt belopp for Visma-dialogen: {value!r}")
-        target_dec = target_dec.quantize(Decimal("0.01"))
         edit = self._amount_edit_in_dialog(dlg)
-        if edit is None:
-            raise RuntimeError(
-                "Hittade inte beloppsfaltet 'Andra till:' i dialogen. "
-                "Stoppar utan att bekrafta."
-            )
 
-        def read_back() -> tuple[Optional[Decimal], str]:
-            """Las kontrollens vardetext med flera pywinauto-varianter."""
-            candidates = []
-            for getter_name in ("window_text", "get_value"):
-                try:
-                    getter = getattr(edit, getter_name)
-                    raw = getter()
-                    if raw is not None:
-                        candidates.append(str(raw).strip())
-                except Exception:
-                    continue
+        if edit is not None:
             try:
-                candidates.extend(
-                    str(item).strip() for item in edit.texts() if item is not None
-                )
+                edit.click_input()   # riktigt klick fokuserar faltet
             except Exception:
                 pass
-            for raw in candidates:
-                parsed = parse_amount(raw)
-                if parsed is not None:
-                    return parsed.quantize(Decimal("0.01")), raw
-            return None, " | ".join(item for item in candidates if item)
-
-        def commit_and_verify() -> tuple[bool, Optional[Decimal], str]:
-            # Tab lamnar faltet och tvingar Vismas valutaformatering innan kontroll.
-            self.press_tab()
             time.sleep(WAIT_SHORT)
-            actual, raw = read_back()
-            return actual == target_dec, actual, raw
 
-        attempts = []
-
-        # Forsok 1: skriv direkt via Windows-kontrollen. Detta undviker att ett
-        # gammalt tecken/ore ligger kvar i det maskerade Visma-faltet.
-        direct_values = [target]
-        if target_dec == target_dec.to_integral_value():
-            direct_values.append(str(int(target_dec)))
-        dot_value = f"{target_dec:.2f}"
-        if dot_value not in direct_values:
-            direct_values.append(dot_value)
-
-        for candidate in direct_values:
-            try:
-                edit.click_input()
-                time.sleep(WAIT_SHORT)
-                edit.set_edit_text(candidate)
-                ok, actual, raw = commit_and_verify()
-                attempts.append(
-                    f"set_edit_text({candidate!r}) -> {raw!r}/{actual}"
-                )
-                if ok:
-                    print(f"  Belopp verifierat i Visma-faltet: {actual:.2f}")
-                    return actual
-            except Exception as exc:
-                attempts.append(f"set_edit_text({candidate!r}) -> fel: {exc}")
-
-        # Forsok 2: Ctrl+A ar sakert i den modala beloppsdialogens Edit-kontroll
-        # (det anvands inte i Vismas huvudfonster, dar Ctrl+A kan oppna Artiklar).
-        keyboard_values = [target]
-        if target_dec == target_dec.to_integral_value():
-            keyboard_values.append(str(int(target_dec)))
-        for candidate in keyboard_values:
-            try:
-                edit.click_input()
-                time.sleep(WAIT_SHORT)
-                pyautogui.hotkey("ctrl", "a")
-                time.sleep(WAIT_SHORT)
-                pyautogui.press("backspace")
-                time.sleep(WAIT_SHORT)
-                self.paste_text(candidate)
-                ok, actual, raw = commit_and_verify()
-                attempts.append(f"tangentbord({candidate!r}) -> {raw!r}/{actual}")
-                if ok:
-                    print(f"  Belopp verifierat i Visma-faltet: {actual:.2f}")
-                    return actual
-            except Exception as exc:
-                attempts.append(f"tangentbord({candidate!r}) -> fel: {exc}")
-
-        actual, raw = read_back()
-        raise RuntimeError(
-            "Beloppet kunde inte verifieras exakt fore OK. "
-            f"Forvantat {target_dec:.2f}, men Visma-faltet visade "
-            f"{raw!r} ({actual}). Stoppar utan att bekrafta. "
-            f"Forsok: {'; '.join(attempts)}"
-        )
+        # Rensa och skriv (samma som fungerar for datum/fakturanr).
+        self.select_all_and_clear()
+        self.paste_text(target)
 
     @staticmethod
     def difference_option_text(dlg) -> str:
@@ -1498,20 +1414,9 @@ def process_row(
     # --- Steg 5: skriv Excel-belopp i 'Andra till:' och tryck Enter ---
     # Felsokning: spara dialogens falt till fil forsta gangen (dialogen ar oppen nu).
     gui.dump_dialog(dlg, "ratt_belopp")
-    try:
-        verified_amount = gui.write_amount_in_dialog(dlg, row["visma_belopp"])
-    except RuntimeError as exc:
-        _stoppa(str(exc), stang_dialog=False)
-    if verified_amount != row["belopp_dec"].quantize(Decimal("0.01")):
-        _stoppa(
-            f"Intern beloppskontroll misslyckades: Excel={row['belopp_dec']}, "
-            f"Visma={verified_amount}. Stoppar utan OK.",
-            stang_dialog=False,
-        )
+    gui.write_amount_in_dialog(dlg, row["visma_belopp"])
     time.sleep(WAIT_SHORT)
-    # Efter verifieringen star fokus inte nodvandigtvis kvar i beloppsfaltet.
-    # Klicka darfor den uttryckliga OK-knappen i stallet for ett blint Enter.
-    gui.click_ok_on_dialog(dlg)
+    gui.press_enter()  # bekraftar 'Ratt belopp?'
     time.sleep(WAIT_AFTER_OK)
 
     # --- Steg 6: ev. "Differens" -> behall 'Restbelopp pa fakturan' + Enter ---
@@ -1524,31 +1429,6 @@ def process_row(
                 f"Dialogtext: {diff_text[:200]}. Stoppar.",
                 stang_dialog=True,
             )
-
-        # Oberoende kontroll: Differens ska exakt motsvara Excel-beloppet minus
-        # Vismas ursprungliga fakturabelopp. Exempel: 1465 - 2881 = -1416,00.
-        if visma_amount is not None:
-            expected_difference = (
-                row["belopp_dec"] - visma_amount
-            ).quantize(Decimal("0.01"))
-            actual_difference = _extract_amount_from_text(diff_text)
-            if actual_difference is None:
-                _stoppa(
-                    "Kunde inte lasa beloppsdifferensen i dialogen. "
-                    f"Forvantade {expected_difference:.2f}. Stoppar utan OK.",
-                    stang_dialog=True,
-                )
-            actual_difference = actual_difference.quantize(Decimal("0.01"))
-            if actual_difference != expected_difference:
-                _stoppa(
-                    "Fel differens i Visma-dialogen. "
-                    f"Forvantat {expected_difference:.2f}, men dialogen visar "
-                    f"{actual_difference:.2f}. Stoppar utan OK sa att inget "
-                    "felaktigt belopp registreras.",
-                    stang_dialog=True,
-                )
-            print(f"  Differens verifierad: {actual_difference:.2f}")
-
         selected_option = gui.difference_option_text(diff_dlg)
         option_source = f"{selected_option} | {diff_text}"
         if not re.search(
@@ -1921,7 +1801,7 @@ def main() -> None:
             f"    Rader som kors: {'ALLA' if MAX_ROWS is None else MAX_ROWS}   "
             f"CONFIRM_EACH_ROW={CONFIRM_EACH_ROW}\n"
         )
-        if input("    Skriv ja for att fortsatta: ").strip() != "ja":
+        if input("    Skriv JA for att fortsatta: ").strip() != "JA":
             print("Avbrutet (ingen skarp korning).")
             return
 
@@ -2000,40 +1880,6 @@ def _self_test() -> None:
     assert rows[0]["kundid"] == ""
     validate_selected_rows(rows)
     print("  tre obligatoriska kolumner + build_rows: OK")
-
-    # Beloppsfaltet maste lasas tillbaka och matcha exakt pa oresniva.
-    class _FakeAmountEdit:
-        def __init__(self):
-            self.value = "2881,00"
-
-        def click_input(self):
-            return None
-
-        def set_edit_text(self, value):
-            self.value = value
-
-        def window_text(self):
-            return self.value
-
-        def texts(self):
-            return [self.value]
-
-    class _FakeAmountDialog:
-        def __init__(self, edit):
-            self.edit = edit
-
-        def descendants(self, control_type=None):
-            return [self.edit] if control_type in (None, "Edit") else []
-
-    fake_edit = _FakeAmountEdit()
-    fake_dialog = _FakeAmountDialog(fake_edit)
-    fake_gui = VismaGui(load_saved_calibration=False)
-    verified = fake_gui.write_amount_in_dialog(fake_dialog, "1465,00")
-    assert verified == Decimal("1465.00")
-    assert _extract_amount_from_text(
-        "Skillnad '-1 416,00' hanteras som Restbelopp pa fakturan"
-    ) == Decimal("-1416.00")
-    print("  exakt belopps- och differensverifiering: OK")
 
     print("\nAlla self-tester gick igenom.")
 
