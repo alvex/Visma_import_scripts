@@ -111,17 +111,13 @@ AUTO_FINALIZE_PAYMENT_BATCH = False  # MASTE vara False. Klicka aldrig Bankgiro/
 AMOUNT_TOLERANCE = Decimal("1.00")  # tillaten differens Excel vs Visma
 
 # --- Timing (sekunder) ---
-# WAIT_* ar korta stabiliseringspauser. TIMEOUT-vardena ar endast maxtider vid
-# fel/langsamt Visma och kostar ingen extra tid nar villkoret uppfylls direkt.
-WAIT_AFTER_ENTER = 0.12
-WAIT_AFTER_OK = 0.05
-WAIT_SHORT = 0.10
-WAIT_AFTER_DATE = 0.10
-DIALOG_TIMEOUT = 3.0
-DIFFERENS_TIMEOUT = 7.0
-DIALOG_CLOSE_TIMEOUT = 3.0
-NO_DIFFERENS_GRACE = 0.20   # kort kontroll nar ingen differens forvantas
-GUI_POLL_INTERVAL = 0.05    # aktiv dialogkontroll, utan blind lang vantetid
+WAIT_AFTER_ENTER = 0.8     # vantetid efter att fakturanr skrivits + Enter
+WAIT_AFTER_OK = 0.15        # vantetid efter OK
+WAIT_SHORT = 0.08          # kort paus mellan tangenttryck/falt
+WAIT_AFTER_DATE = 0.2     # paus efter att Bet.dag skrivits
+DIALOG_TIMEOUT = 1.0       # hur lange vi vantar pa "Ratt belopp?"-dialogen
+DIFFERENS_TIMEOUT = 1.0    # hur lange vi vantar pa ev. "Differens"-dialog
+DIALOG_CLOSE_TIMEOUT = 1.0 # hur lange vi vantar pa att dialogerna stangs
 
 # --- Urval/test ---
 # Anvandaren valjer antal interaktivt. --rader kan anvandas som ytterligare tak.
@@ -140,11 +136,6 @@ INVOICE_MAX_DIGITS = 8
 
 # --- Loggning ---
 LOG_PREFIX = "visma_inbetalningar_logg_"
-
-# Dialogtrad och kontrollistor ar mycket langsamma i vissa Visma/Windows-
-# installationer. De skapas darfor endast med kommandoradsflaggan --debug-gui.
-DEBUG_GUI_DUMPS = False
-SHOW_ROW_TIMING = True
 
 # Endast dessa tre kolumner kravs av registreringsflodet.
 REQUIRED_COLUMNS = ["Betalningsdatum", "Fakturanr", "Belopp"]
@@ -494,9 +485,6 @@ class VismaGui:
         self.calibration = load_calibration() if load_saved_calibration else {}
         self._calibration_size_warning_shown = False
         self._dumped: set = set()
-        # En kontrolltrad per dialog ateranvands av text-, belopps-, combo- och
-        # OK-sokning. Det undviker flera dyra descendants()-anrop per dialog.
-        self._dialog_controls_cache: dict[int, list] = {}
 
     def dump_dialog(self, dlg, tag: str) -> None:
         """
@@ -508,10 +496,6 @@ class VismaGui:
         wrapper-objektet. Skapa darfor en specification fran dialogens handle.
         Om pywinauto anda inte kan skriva tradet anvands en manuell kontrollista.
         """
-        # print_control_identifiers() kan ta tiotals sekunder i aldre Win32-
-        # program. Kor den aldrig i normal registrering.
-        if not DEBUG_GUI_DUMPS:
-            return
         if dlg is None or tag in self._dumped:
             return
         out = Path.cwd() / f"visma_inspect_{tag}.txt"
@@ -695,54 +679,6 @@ class VismaGui:
             time.sleep(WAIT_SHORT)
 
     # --- Dialoghantering ----------------------------------------------------
-    def _find_dialog_now(self, title_contains: str, include_fallback: bool = False):
-        """
-        Gor en snabb, riktad sokning efter en Visma-dialog.
-
-        Den gamla implementationen raknade upp samtliga skrivbordsfonster med
-        bade Win32 och UIA vid varje pollning. Pa vissa Windows-installationer
-        tog en enda sadan UIA-rakning flera sekunder. Har soker vi forst endast
-        i den redan anslutna Visma-processen och med vald backend.
-        """
-        if Desktop is None:
-            return None
-
-        title_re = f"(?i).*{title_contains}.*"
-
-        if self.app is not None:
-            try:
-                matches = self.app.windows(title_re=title_re, visible_only=True)
-                if matches:
-                    return matches[0]
-            except Exception:
-                pass
-
-        primary_backend = self.backend or "win32"
-        try:
-            matches = Desktop(backend=primary_backend).windows(
-                title_re=title_re,
-                visible_only=True,
-            )
-            if matches:
-                return matches[0]
-        except Exception:
-            pass
-
-        # Alternativ backend provas bara en gang efter normal timeout, inte vid
-        # varje pollning. Det bevarar kompatibilitet utan att bromsa normalfall.
-        if include_fallback:
-            fallback_backend = "uia" if primary_backend == "win32" else "win32"
-            try:
-                matches = Desktop(backend=fallback_backend).windows(
-                    title_re=title_re,
-                    visible_only=True,
-                )
-                if matches:
-                    return matches[0]
-            except Exception:
-                pass
-        return None
-
     def wait_for_dialog(self, title_contains: str, timeout: float = DIALOG_TIMEOUT):
         """
         Vantar pa en dialog vars titel innehaller title_contains.
@@ -754,18 +690,18 @@ class VismaGui:
             time.sleep(min(timeout, WAIT_AFTER_ENTER))
             return None
 
-        deadline = time.perf_counter() + max(0.0, timeout)
-        while True:
-            dialog = self._find_dialog_now(title_contains)
-            if dialog is not None:
-                return dialog
-            remaining = deadline - time.perf_counter()
-            if remaining <= 0:
-                break
-            time.sleep(min(GUI_POLL_INTERVAL, remaining))
-
-        # Langsammare reservsokning endast nar den snabba sokningen misslyckas.
-        return self._find_dialog_now(title_contains, include_fallback=True)
+        pat = re.compile(title_contains, re.IGNORECASE)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            for w in self._all_top_windows():
+                try:
+                    t = w.window_text() or ""
+                except Exception:
+                    continue
+                if pat.search(t):
+                    return w
+            time.sleep(0.2)
+        return None
 
     def _all_top_windows(self) -> list:
         """Alla toppniva-fonster fran bade Win32 och UIA, utan dubbletter."""
@@ -812,49 +748,14 @@ class VismaGui:
         except Exception as exc:
             print(f"  [DEBUG] Kunde inte lista fonster: {exc}")
 
-    def _dialog_controls(self, dlg) -> list:
-        """Hamta dialogens kontrolltrad en gang och ateranvand resultatet."""
-        if dlg is None:
-            return []
-        cache_key = id(dlg)
-        if cache_key in self._dialog_controls_cache:
-            return self._dialog_controls_cache[cache_key]
-        try:
-            controls = list(dlg.descendants())
-        except Exception:
-            controls = []
-        self._dialog_controls_cache[cache_key] = controls
-        return controls
-
     @staticmethod
-    def _control_is(control, expected: str) -> bool:
-        """Backend-oberoende kontrolltypstest for Win32 och UIA."""
-        names = []
-        for getter_name in ("friendly_class_name", "class_name"):
-            try:
-                names.append(str(getattr(control, getter_name)()).replace(" ", ""))
-            except Exception:
-                pass
-        try:
-            names.append(str(control.element_info.control_type).replace(" ", ""))
-        except Exception:
-            pass
-        if any(name.casefold() == expected.casefold() for name in names):
-            return True
-        # Reserv for testdubblar och ovanliga wrappers.
-        if expected == "Edit" and hasattr(control, "set_edit_text"):
-            return True
-        if expected == "ComboBox" and hasattr(control, "selected_text"):
-            return True
-        return False
-
-    def dialog_text(self, dlg) -> str:
+    def dialog_text(dlg) -> str:
         """Samlar all synlig text i dialogen (for verifiering av fakturanr/belopp)."""
         if dlg is None:
             return ""
         try:
             parts = []
-            for child in self._dialog_controls(dlg):
+            for child in dlg.descendants():
                 try:
                     t = child.window_text()
                     if t:
@@ -871,30 +772,26 @@ class VismaGui:
         Returnerar True om ett OK-klick utfordes (eller simulerades).
         """
         if dlg is not None:
-            # Las knappsamlingen en gang. Den gamla varianten gjorde upp till
-            # sex separata exists(timeout=0.5)-sokningar for OK/Ok/&OK.
-            try:
-                buttons = [
-                    child for child in self._dialog_controls(dlg)
-                    if self._control_is(child, "Button")
-                ]
-            except Exception:
-                buttons = []
-            for button in buttons:
+            for name in ("OK", "&OK", "Ok"):
                 try:
-                    title = (button.window_text() or "").replace("&", "").strip()
-                    if title.casefold() == "ok":
-                        button.click_input()
+                    btn = dlg.child_window(title=name, control_type="Button")
+                    if btn.exists(timeout=0.5):
+                        btn.click_input()
                         return True
                 except Exception:
-                    continue
+                    try:
+                        btn = dlg.child_window(title=name, class_name="Button")
+                        if btn.exists(timeout=0.5):
+                            btn.click_input()
+                            return True
+                    except Exception:
+                        continue
         # Fallback: Enter bekraftar oftast OK.
         self.press_enter()
         return True
 
     def wait_for_dialog_closed(self, title_contains: str,
-                               timeout: float = DIALOG_CLOSE_TIMEOUT,
-                               dialog=None) -> bool:
+                               timeout: float = DIALOG_CLOSE_TIMEOUT) -> bool:
         """
         Vantar tills dialogen med titel *title_contains* INTE langre finns.
         Returnerar True om den stangdes inom timeout, annars False.
@@ -902,37 +799,42 @@ class VismaGui:
         if Desktop is None:
             time.sleep(min(timeout, WAIT_AFTER_OK))
             return True
-        deadline = time.perf_counter() + max(0.0, timeout)
-        while True:
-            if dialog is not None:
+        pat = re.compile(title_contains, re.IGNORECASE)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            still_open = False
+            for win in self._all_top_windows():
                 try:
-                    still_open = bool(dialog.is_visible())
+                    if pat.search(win.window_text() or ""):
+                        still_open = True
+                        break
                 except Exception:
-                    # Ett forstort dialoghandtag betyder att fonstret ar stangt.
-                    still_open = False
-            else:
-                still_open = self._find_dialog_now(title_contains) is not None
-
+                    continue
             if not still_open:
                 return True
-            remaining = deadline - time.perf_counter()
-            if remaining <= 0:
-                return False
-            time.sleep(min(GUI_POLL_INTERVAL, remaining))
+            time.sleep(0.2)
+        return False
 
-    def _amount_edit_in_dialog(self, dlg):
+    @staticmethod
+    def _amount_edit_in_dialog(dlg):
         """
         Hittar redigeringsfaltet 'Andra till:' i "Ratt belopp?"-dialogen.
         Strategi: valj det Edit-falt vars innehall ser ut som ett belopp;
         annars forsta Edit-faltet. Returnerar wrapper eller None.
         """
         try:
-            edits = [
-                child for child in self._dialog_controls(dlg)
-                if self._control_is(child, "Edit")
-            ]
+            edits = dlg.descendants(control_type="Edit")
         except Exception:
             edits = []
+        if not edits:
+            try:
+                edits = [
+                    child for child in dlg.descendants()
+                    if child.friendly_class_name() == "Edit"
+                    or child.class_name().lower() == "edit"
+                ]
+            except Exception:
+                edits = []
         if not edits:
             return None
         for e in edits:
@@ -1053,17 +955,24 @@ class VismaGui:
             f"Forsok: {'; '.join(attempts)}"
         )
 
-    def difference_option_text(self, dlg) -> str:
+    @staticmethod
+    def difference_option_text(dlg) -> str:
         """Las det synliga valet i Differens-dialogens kombinationsruta."""
         if dlg is None:
             return ""
+        controls = []
         try:
-            controls = [
-                child for child in self._dialog_controls(dlg)
-                if self._control_is(child, "ComboBox")
-            ]
+            controls.extend(dlg.descendants(control_type="ComboBox"))
         except Exception:
-            controls = []
+            pass
+        if not controls:
+            try:
+                controls = [
+                    child for child in dlg.descendants()
+                    if child.friendly_class_name() == "ComboBox"
+                ]
+            except Exception:
+                controls = []
         for control in controls:
             for getter in (
                 lambda: control.selected_text(),
@@ -1519,20 +1428,9 @@ def process_row(
             logger.add(log)
             raise RuntimeError("Stoppad av anvandare.")
 
-    # Mat faktisk GUI-tid per rad. Detta gor det enkelt att upptacka om nagon
-    # enskild Visma-operation fortfarande ar langsam pa den aktuella datorn.
-    row_started = time.perf_counter()
-    step_started = row_started
-    step_times: list[tuple[str, float]] = []
-
-    def _mark_step(name: str) -> None:
-        nonlocal step_started
-        now = time.perf_counter()
-        step_times.append((name, now - step_started))
-        step_started = now
-
     # Fokusera Visma EFTER terminalfragorna, precis innan GUI-inmatningen.
     gui.activate_visma_window()
+    time.sleep(WAIT_SHORT)
 
     def _stoppa(felmeddelande: str, stang_dialog: bool = False) -> None:
         """Loggar fel och stoppar hela koningen (fortsatter INTE till nasta faktura)."""
@@ -1541,8 +1439,6 @@ def process_row(
         logger.add(log)
         if stang_dialog:
             gui.press_esc()
-        if SHOW_ROW_TIMING:
-            print(f"  TID FORE STOPP: {time.perf_counter() - row_started:.2f} s")
         raise RuntimeError(felmeddelande)
 
     # --- Steg 2: skriv Betalningsdatum i Bet.dag (AA-MM-DD) ---
@@ -1552,7 +1448,6 @@ def process_row(
         _stoppa(str(exc))
     gui.clear_and_write(row["visma_datum"])
     time.sleep(WAIT_AFTER_DATE)
-    _mark_step("datum")
 
     # --- Steg 3: fokusera Fakt.nr explicit, skriv Fakturanr och tryck Enter ---
     # Den gamla koden anvande tva blinda Enter-tryck. Det kunde landa i
@@ -1564,7 +1459,7 @@ def process_row(
     gui.clear_and_write(row["fakturanr"])
     time.sleep(WAIT_SHORT)
     gui.press_enter()  # bekraftar Fakt.nr -> oppnar "Ratt belopp?"
-    _mark_step("fakturanr")
+    time.sleep(WAIT_AFTER_ENTER)
 
     # --- Steg 4: vanta tills "Ratt belopp?" oppnas ---
     dlg = gui.wait_for_dialog(DIALOG_TITLE_CONTAINS, timeout=DIALOG_TIMEOUT)
@@ -1579,7 +1474,6 @@ def process_row(
             "Dialogen 'Ratt belopp?' oppnades inte inom tidsgransen. Kontrollera "
             f"att fakturanr {row['fakturanr']} finns bland Obetalda. Stoppar."
         )
-    _mark_step("ratt_belopp")
     dtext = gui.dialog_text(dlg)
 
     # Kontroll: galler dialogen ratt faktura?
@@ -1614,35 +1508,14 @@ def process_row(
             f"Visma={verified_amount}. Stoppar utan OK.",
             stang_dialog=False,
         )
-    _mark_step("belopp")
+    time.sleep(WAIT_SHORT)
     # Efter verifieringen star fokus inte nodvandigtvis kvar i beloppsfaltet.
     # Klicka darfor den uttryckliga OK-knappen i stallet for ett blint Enter.
     gui.click_ok_on_dialog(dlg)
+    time.sleep(WAIT_AFTER_OK)
 
     # --- Steg 6: ev. "Differens" -> behall 'Restbelopp pa fakturan' + Enter ---
-    # Nar Excel-beloppet avviker fran Vismas fakturabelopp maste Differens visas.
-    # Vid full betalning gor vi bara en mycket kort kontroll i stallet for att
-    # alltid betala hela DIFFERENS_TIMEOUT.
-    difference_expected: Optional[bool] = None
-    if visma_amount is not None:
-        difference_expected = (
-            row["belopp_dec"].quantize(Decimal("0.01"))
-            != visma_amount.quantize(Decimal("0.01"))
-        )
-    difference_wait = (
-        DIFFERENS_TIMEOUT
-        if difference_expected is not False
-        else NO_DIFFERENS_GRACE
-    )
-    diff_dlg = gui.wait_for_dialog(
-        DIALOG_DIFFERENS_CONTAINS,
-        timeout=difference_wait,
-    )
-    if difference_expected is True and diff_dlg is None:
-        _stoppa(
-            "Beloppet avviker fran fakturabeloppet men dialogen 'Differens' "
-            "oppnades inte. Stoppar sa att nasta faktura inte paborjas."
-        )
+    diff_dlg = gui.wait_for_dialog(DIALOG_DIFFERENS_CONTAINS, timeout=DIFFERENS_TIMEOUT)
     if diff_dlg is not None:
         diff_text = gui.dialog_text(diff_dlg)
         if diff_text and row["fakturanr"] not in diff_text:
@@ -1691,27 +1564,18 @@ def process_row(
             )
         print("  Differens-dialog: behaller 'Restbelopp pa fakturan' och bekraftar.")
         gui.click_ok_on_dialog(diff_dlg)
+        time.sleep(WAIT_AFTER_OK)
         # --- Steg 7: vanta tills Differens stangts ---
         if not gui.wait_for_dialog_closed(DIALOG_DIFFERENS_CONTAINS,
-                                          timeout=DIALOG_CLOSE_TIMEOUT,
-                                          dialog=diff_dlg):
+                                          timeout=DIALOG_CLOSE_TIMEOUT):
             _stoppa("'Differens'-dialogen stangdes inte. Stoppar.")
-    _mark_step("differens")
 
     # --- Steg 7: sakerstall att 'Ratt belopp?' stangts innan nasta rad ---
-    if not gui.wait_for_dialog_closed(
-        DIALOG_TITLE_CONTAINS,
-        timeout=DIALOG_CLOSE_TIMEOUT,
-        dialog=dlg,
-    ):
+    if not gui.wait_for_dialog_closed(DIALOG_TITLE_CONTAINS, timeout=DIALOG_CLOSE_TIMEOUT):
         _stoppa("'Ratt belopp?'-dialogen stangdes inte. Stoppar.")
-    _mark_step("stangning")
 
     log.status = Status.OK
     logger.add(log)
-    if SHOW_ROW_TIMING:
-        details = ", ".join(f"{name}={seconds:.2f}s" for name, seconds in step_times)
-        print(f"  TID: {time.perf_counter() - row_started:.2f} s ({details})")
     return Status.OK
 
 
@@ -2011,13 +1875,6 @@ def main() -> None:
         help="Listar Vismas falt/dialogkontroller for felsokning (kraver oppet Visma)."
     )
     parser.add_argument(
-        "--debug-gui", action="store_true",
-        help=(
-            "Sparar langsamma dialog-/kontrolldumpar for felsokning. "
-            "Anvand inte flaggan vid normal registrering."
-        ),
-    )
-    parser.add_argument(
         "--calibrate", action="store_true",
         help=(
             "Kalibrera klickpositionerna for Bet.dag och Fakt.nr. Anvands nar "
@@ -2052,11 +1909,9 @@ def main() -> None:
         return
 
     # --- Overstyr sakerhetslagen fran kommandoraden ---
-    global DRY_RUN, MAX_ROWS, DEBUG_GUI_DUMPS
+    global DRY_RUN, MAX_ROWS
     if args.live:
         DRY_RUN = False
-    if args.debug_gui:
-        DEBUG_GUI_DUMPS = True
     if args.rader is not None:
         MAX_ROWS = None if args.rader <= 0 else args.rader
 
@@ -2166,19 +2021,15 @@ def _self_test() -> None:
     class _FakeAmountDialog:
         def __init__(self, edit):
             self.edit = edit
-            self.descendants_calls = 0
 
         def descendants(self, control_type=None):
-            self.descendants_calls += 1
             return [self.edit] if control_type in (None, "Edit") else []
 
     fake_edit = _FakeAmountEdit()
     fake_dialog = _FakeAmountDialog(fake_edit)
     fake_gui = VismaGui(load_saved_calibration=False)
-    fake_gui.dialog_text(fake_dialog)
     verified = fake_gui.write_amount_in_dialog(fake_dialog, "1465,00")
     assert verified == Decimal("1465.00")
-    assert fake_dialog.descendants_calls == 1
     assert _extract_amount_from_text(
         "Skillnad '-1 416,00' hanteras som Restbelopp pa fakturan"
     ) == Decimal("-1416.00")
