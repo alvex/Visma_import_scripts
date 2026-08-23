@@ -114,9 +114,9 @@ AMOUNT_TOLERANCE = Decimal("1.00")  # tillaten differens Excel vs Visma
 # WAIT_* ar korta stabiliseringspauser. TIMEOUT-vardena ar endast maxtider vid
 # fel/langsamt Visma och kostar ingen extra tid nar villkoret uppfylls direkt.
 WAIT_AFTER_ENTER = 0.12
-WAIT_AFTER_OK = 0.05
+WAIT_AFTER_OK = 0.10
 WAIT_SHORT = 0.10
-WAIT_AFTER_DATE = 0.10
+WAIT_AFTER_DATE = 0.12
 DIALOG_TIMEOUT = 3.0
 DIFFERENS_TIMEOUT = 7.0
 DIALOG_CLOSE_TIMEOUT = 3.0
