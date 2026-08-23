@@ -29,6 +29,19 @@ visma_inbetalningar_bank_juni_2026_logg.csv
 visma_inbetalningar_skatteverket_juni_2026_logg.csv
 ```
 
+Därefter erbjuder skriptet två valfria steg:
+
+1. **Dubblettrensning** → `..._clean_logg.csv`
+2. **Avstämning** mot en export över betalda fakturor → `..._avvikelser.csv`
+
+Hela flödet:
+
+```
+Sammanställ  ->  (fråga) Skapa fil utan dubbletter?  ->  clean_logg
+                                                   |
+                                                   +->  (fråga) Jämföra med betalda fakturor?  ->  avvikelser
+```
+
 ---
 
 ## Indata: loggfilernas format
@@ -65,6 +78,14 @@ Filnamnsmönstret som söks är `visma_inbetalningar_logg_*_*` (t.ex.
 | 7 | Spara i loggmappen med rätt filnamn | `write_output()` bygger `visma_inbetalningar_{typ}_{månad}_{år}_logg.csv` |
 | 8 | Tåla tomma filer, saknade kolumner, ogiltiga datum utan att krascha | Varje fil/rad hanteras i `try`/skip med varning i stället för avbrott |
 | 9 | Visa sammanställning i terminalen | Statistikblock skrivs ut i slutet av `main()` |
+| 10 | Fråga om en ny fil utan dubbletter ska skapas | `prompt_yes_no(...)` efter sammanställningen |
+| 11 | Vid `Ja`: ta bort dubbletter (behåll första kronologiskt), varna vid olika belopp/datum, spara `..._clean_logg.csv`, visa antal borttagna | `build_clean()` + `write_output()` |
+| 12 | Vid `Nej`: avsluta kontrollerat, behåll den sammanställda filen | `return 0` utan att röra filen |
+| 13 | Fråga om jämförelse mot export över betalda fakturor | `prompt_yes_no(...)` efter clean-filen |
+| 14 | Be om sökväg, kontrollera fil, stöd CSV+Excel, jämför på fakturanr, normalisera nummer | `prompt_existing_file()`, `read_comparison_file()`, `normalize_invoice()` |
+| 15 | Identifiera avvikelser (`SAKNAS_I_VISMA`, `SAKNAS_I_BETALDA_FAKTUROR`, `BELOPPSAVVIKELSE`, `DATUMAVVIKELSE`) | `run_comparison()` mängdjämförelse + belopp/datum-kontroll |
+| 16–17 | Skapa avvikelsefil med angivna kolumner, spara som `..._avvikelser.csv` | `run_comparison()` skriver med `AVVIKELSE_COLUMNS` |
+| 18 | Visa avstämningssammanställning + sökväg | Statistikblock i `run_comparison()` |
 
 ---
 
@@ -110,6 +131,59 @@ Filnamnsmönstret som söks är `visma_inbetalningar_logg_*_*` (t.ex.
 
 ---
 
+## Dubblettrensning (steg 10–12)
+
+Efter sammanställningen frågar skriptet: **"Vill du skapa en ny fil utan dubbletter?"**
+
+- **Ja** → `build_clean()` går igenom de (redan kronologiskt sorterade) posterna och
+  behåller **första** förekomsten per fakturanummer. Övriga tas bort. Om en borttagen
+  dubblett har **annat belopp** eller **annat betalningsdatum** än den behållna visas
+  en varning. Resultatet sparas som `..._clean_logg.csv` (alla rader får `Dubblett = NEJ`),
+  och antalet borttagna dubbletter visas.
+- **Nej** → skriptet avslutas kontrollerat och den sammanställda filen behålls oförändrad.
+
+Tomt fakturanummer kan inte avgöras som dubblett och behålls alltid.
+
+---
+
+## Avstämning mot betalda fakturor (steg 13–18)
+
+När clean-filen skapats frågar skriptet: **"Vill du jämföra filen med en export över
+betalda fakturor?"**
+
+- **Nej** → avslutar utan att ta bort clean-filen.
+- **Ja** → skriptet ber om sökväg till jämförelsefilen (`prompt_existing_file`),
+  läser den (`read_comparison_file`) och jämför mot clean-filens poster.
+
+**Filstöd:** CSV (auto-detekterad avgränsare `;`, `,` eller tab) och Excel `.xlsx`/`.xlsm`
+(kräver `openpyxl` – installeras vid behov med `pip install openpyxl`). Gamla `.xls`
+stöds inte.
+
+**Nyckel:** fakturanummer, normaliserat med `normalize_invoice()` (tar bort mellanslag
+och avslutande `.0`/`,0`, så att Excel-tal som `49561.0` matchar `49561`).
+
+**Avvikelsetyper:**
+
+| Typ | Betydelse |
+|-----|-----------|
+| `SAKNAS_I_VISMA` | Finns i betalda-exporten men saknas i Visma-loggen (ev. oregistrerad inbetalning) |
+| `SAKNAS_I_BETALDA_FAKTUROR` | Finns i Visma-loggen men saknas i jämförelsefilen |
+| `BELOPPSAVVIKELSE` | Finns i båda men beloppen skiljer sig (jämförs som tal, `parse_amount`) |
+| `DATUMAVVIKELSE` | Finns i båda men betalningsdatumen skiljer sig (jämförs som datum, `parse_date`) |
+
+En faktura kan ge både en belopps- och en datumavvikelse (en rad per typ).
+
+**Avvikelsefil** (`..._avvikelser.csv`, `;`-separerad, `utf-8-sig`) med kolumnerna:
+
+```
+Avvikelsetyp;Fakturanummer;Belopp_Visma;Belopp_Betalda_fakturor;Betalningsdatum_Visma;Betalningsdatum_Betalda_fakturor;Kommentar
+```
+
+Till slut skrivs en avstämningssammanställning ut: antal fakturor per fil, matchande,
+saknas i Visma, endast i Visma, belopps-/datumavvikelser och sökvägen till avvikelsefilen.
+
+---
+
 ## Datumtolkning
 
 `parse_date()` klarar bl.a.:
@@ -152,6 +226,16 @@ Terminalens sammanställning:
   Skapad fil:                 ...\visma_inbetalningar_bank_juni_2026_logg.csv
 ============================================================
 ```
+
+---
+
+## Skapade filer (översikt)
+
+| Fil | Skapas när | Innehåll |
+|-----|-----------|----------|
+| `visma_inbetalningar_{typ}_{månad}_{år}_logg.csv` | Alltid | Alla OK-poster i perioden, med `Dubblett`-markering |
+| `visma_inbetalningar_{typ}_{månad}_{år}_clean_logg.csv` | Vid `Ja` på steg 10 | Samma poster utan dubbletter (första per fakturanr) |
+| `visma_inbetalningar_{typ}_{månad}_{år}_avvikelser.csv` | Vid `Ja` på steg 13 | Avvikelser mot betalda-exporten |
 
 ---
 

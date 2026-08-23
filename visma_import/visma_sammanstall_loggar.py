@@ -36,6 +36,7 @@ import re
 import sys
 from collections import OrderedDict, defaultdict
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 # ---------------------------------------------------------------------------
 # Konfiguration
@@ -57,6 +58,17 @@ BETALNINGSDATUM_ALIASES = ["Betalningsdatum", "Datum", "Bet.dag", "Betalningsdag
 VISMADATUM_ALIASES = ["VismaDatum", "Visma-datum"]
 STATUS_ALIASES = ["Status"]
 FAKTURANR_ALIASES = ["Fakturanr", "Fakturanummer", "Fakt.nr", "Faktura"]
+BELOPP_ALIASES = ["Belopp", "Summa", "Betalt belopp", "Belopp SEK", "Amount", "Betalt"]
+
+# Alias for jamforelsefilen (export over betalda fakturor). Bredare an loggens
+# egna rubriker eftersom exportfilen kan komma fran ett annat system.
+CMP_FAKTURANR_ALIASES = FAKTURANR_ALIASES + [
+    "Fakturanr.", "Faktura nr", "Invoice", "InvoiceNo", "Invoice No", "OCR", "Referens",
+]
+CMP_BELOPP_ALIASES = BELOPP_ALIASES + ["Inbetalt", "Inbetalt belopp", "Betalt SEK"]
+CMP_DATUM_ALIASES = BETALNINGSDATUM_ALIASES + [
+    "Betaldatum", "Betald", "Bokf.datum", "Bokforingsdatum", "Payment date", "Betaldag",
+]
 
 # Giltiga betalningstyper (indata -> etikett i filnamnet).
 PAYMENT_TYPES = {
@@ -118,6 +130,89 @@ def prompt_payment_type() -> str:
         if raw in PAYMENT_TYPES:
             return PAYMENT_TYPES[raw]
         print("  FEL: Ange antingen 'Bank' eller 'Skatteverket'.\n")
+
+
+def prompt_yes_no(question: str) -> bool:
+    """Ja/Nej-fraga. Upprepar tills ett giltigt svar ges."""
+    while True:
+        raw = input(f"{question} (Ja/Nej): ").strip().lower()
+        if raw in ("ja", "j", "y", "yes"):
+            return True
+        if raw in ("nej", "n", "no"):
+            return False
+        print("  Svara Ja eller Nej.")
+
+
+def prompt_existing_file(question: str):
+    """
+    Fragar efter en befintlig fil. Returnerar full sokvag, eller None om
+    anvandaren lamnar tomt (vill hoppa over). Upprepar vid ogiltig sokvag.
+    """
+    while True:
+        raw = input(question).strip().strip('"').strip("'")
+        if not raw:
+            return None
+        path = os.path.abspath(os.path.expanduser(raw))
+        if not os.path.isfile(path):
+            print(
+                f"  FEL: Filen finns inte: {path}\n"
+                "  Forsok igen (eller tryck Enter for att hoppa over).\n"
+            )
+            continue
+        return path
+
+
+# ===========================================================================
+# Hjalpfunktioner: normalisering av fakturanr och belopp
+# ===========================================================================
+def normalize_invoice(value) -> str:
+    """
+    Normaliserar ett fakturanummer for jamforelse: tar bort alla mellanslag
+    och en eventuell avslutande '.0'/',0' (vanligt nar Excel lagrar numret som tal).
+
+    Exempel:
+        ' 49561 '   -> '49561'
+        '49561.0'   -> '49561'
+        '49561,0'   -> '49561'
+    """
+    s = str(value if value is not None else "").strip()
+    s = re.sub(r"\s+", "", s)
+    if s.endswith(".0") or s.endswith(",0"):
+        s = s[:-2]
+    return s
+
+
+def parse_amount(value):
+    """
+    Tolkar ett belopp till Decimal (2 decimaler) for jamforelse. Returnerar None
+    om vardet inte kan tolkas. Hanterar svensk decimal (komma) och tusenavskiljare.
+
+    Exempel:
+        '2017,00'   -> Decimal('2017.00')
+        '2 017,00'  -> Decimal('2017.00')
+        '2017.0'    -> Decimal('2017.00')
+        1396.5      -> Decimal('1396.50')
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value.quantize(Decimal("0.01"))
+    if isinstance(value, (int, float)):
+        try:
+            return Decimal(str(value)).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            return None
+    s = str(value).strip()
+    if not s:
+        return None
+    s = s.replace("kr", "").replace("SEK", "").replace("\xa0", "").replace(" ", "")
+    if "," in s:
+        # Komma tolkas som decimaltecken; punkter antas vara tusenavskiljare.
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(s).quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return None
 
 
 # ===========================================================================
@@ -266,6 +361,7 @@ def collect_rows(folder: str, year: int, month: int, output_name: str):
         col_visma = find_column(fieldnames, VISMADATUM_ALIASES)
         col_status = find_column(fieldnames, STATUS_ALIASES)
         col_faktnr = find_column(fieldnames, FAKTURANR_ALIASES)
+        col_belopp = find_column(fieldnames, BELOPP_ALIASES)
 
         missing = []
         if col_datum is None and col_visma is None:
@@ -322,6 +418,8 @@ def collect_rows(folder: str, year: int, month: int, output_name: str):
                 "sort_key": date_obj,
                 "source": name,
                 "faktnr_col": col_faktnr,
+                "belopp_col": col_belopp,
+                "datum_col": col_datum or col_visma,
             })
             stats["rows_included"] += 1
 
@@ -395,6 +493,287 @@ def write_output(folder: str, output_name: str, column_order: list[str],
 
 
 # ===========================================================================
+# Steg 10-12: Dubblettrensning ("clean")
+# ===========================================================================
+def build_clean(included: list[dict]) -> tuple[list[dict], int, list[str]]:
+    """
+    Skapar en lista utan dubbletter baserat pa fakturanummer. Behaller den
+    forsta posten (indata ar redan kronologiskt sorterad). Varnar om dubbletter
+    har olika belopp eller betalningsdatum.
+
+    Returnerar (clean_items, antal_borttagna, varningar).
+    """
+    seen: dict[str, dict] = {}
+    clean: list[dict] = []
+    removed = 0
+    warnings: list[str] = []
+
+    for item in included:
+        row = item["row"]
+        key = (row.get(item["faktnr_col"], "") or "").strip()
+
+        # Tomt fakturanummer kan inte avgoras som dubblett -> behall posten.
+        if key == "":
+            clean.append(item)
+            continue
+
+        if key not in seen:
+            seen[key] = item
+            clean.append(item)
+            continue
+
+        # Dubblett: behall den forsta, kontrollera avvikelser.
+        removed += 1
+        first = seen[key]
+
+        b1 = parse_amount(first["row"].get(first["belopp_col"], "")) if first["belopp_col"] else None
+        b2 = parse_amount(row.get(item["belopp_col"], "")) if item["belopp_col"] else None
+        if b1 is not None and b2 is not None and b1 != b2:
+            warnings.append(
+                f"Fakturanr {key}: olika belopp "
+                f"({first['row'].get(first['belopp_col'])} vs {row.get(item['belopp_col'])}) "
+                f"- behaller forsta ({first['source']})."
+            )
+
+        d1 = first["sort_key"]
+        d2 = item["sort_key"]
+        if d1 and d2 and d1 != d2:
+            warnings.append(
+                f"Fakturanr {key}: olika betalningsdatum "
+                f"({d1.isoformat()} vs {d2.isoformat()}) - behaller forsta ({first['source']})."
+            )
+
+    return clean, removed, warnings
+
+
+# ===========================================================================
+# Steg 13-18: Jamforelse mot export over betalda fakturor
+# ===========================================================================
+def read_excel_rows(path: str):
+    """Laser forsta bladet i en .xlsx/.xlsm-fil via openpyxl (lazy import)."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise RuntimeError(
+            "openpyxl saknas men kravs for att lasa Excel-filer. "
+            "Installera med: pip install openpyxl  (eller spara filen som CSV)."
+        )
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header = next(rows_iter)
+    except StopIteration:
+        return [], []
+    fieldnames = [("" if h is None else str(h).strip()) for h in header]
+    rows = []
+    for raw in rows_iter:
+        d = {}
+        for i, fn in enumerate(fieldnames):
+            v = raw[i] if i < len(raw) else None
+            d[fn] = "" if v is None else str(v)
+        rows.append(d)
+    return fieldnames, rows
+
+
+def read_comparison_file(path: str):
+    """
+    Laser jamforelsefilen. Stodjer CSV (auto-detekterad avgransare) och Excel
+    (.xlsx/.xlsm). Returnerar (fieldnames, rows).
+    """
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix in (".xlsx", ".xlsm"):
+        return read_excel_rows(path)
+    if suffix == ".xls":
+        raise RuntimeError(
+            "Gamla .xls-filer stods inte. Spara om filen som .xlsx eller .csv."
+        )
+
+    # CSV: prova kodningar och auto-detektera avgransare (; eller ,).
+    for enc in READ_ENCODINGS:
+        try:
+            with open(path, "r", newline="", encoding=enc) as fh:
+                sample = fh.read(8192)
+                fh.seek(0)
+                delim = CSV_DELIMITER
+                try:
+                    delim = csv.Sniffer().sniff(sample, delimiters=";,\t").delimiter
+                except Exception:
+                    delim = ";" if sample.count(";") >= sample.count(",") else ","
+                reader = csv.DictReader(fh, delimiter=delim)
+                fieldnames = reader.fieldnames
+                rows = list(reader)
+            return fieldnames, rows
+        except UnicodeDecodeError:
+            continue
+    with open(path, "r", newline="", encoding="cp1252", errors="replace") as fh:
+        reader = csv.DictReader(fh, delimiter=CSV_DELIMITER)
+        return reader.fieldnames, list(reader)
+
+
+AVVIKELSE_COLUMNS = [
+    "Avvikelsetyp",
+    "Fakturanummer",
+    "Belopp_Visma",
+    "Belopp_Betalda_fakturor",
+    "Betalningsdatum_Visma",
+    "Betalningsdatum_Betalda_fakturor",
+    "Kommentar",
+]
+
+
+def run_comparison(folder: str, payment_type: str, month_name: str, year: int,
+                   clean_items: list[dict]) -> None:
+    """
+    Steg 14-18: jamfor clean-filens poster med en export over betalda fakturor
+    och skriver en avvikelsefil.
+    """
+    cmp_path = prompt_existing_file(
+        "\nAnge full sokvag till jamforelsefilen "
+        "(t.ex. betalda_fakturor_bank_2026-04-01_2026-04-30_02.csv): "
+    )
+    if cmp_path is None:
+        print("Ingen jamforelsefil angavs. Jamforelsen hoppades over. Clean-filen behalls.")
+        return
+
+    try:
+        fieldnames, cmp_rows = read_comparison_file(cmp_path)
+    except Exception as exc:
+        print(f"FEL: Kunde inte lasa jamforelsefilen: {exc}\nJamforelsen avbryts. Clean-filen behalls.")
+        return
+
+    if not fieldnames:
+        print("FEL: Jamforelsefilen saknar rubrikrad. Jamforelsen avbryts.")
+        return
+
+    cf = find_column(fieldnames, CMP_FAKTURANR_ALIASES)
+    cb = find_column(fieldnames, CMP_BELOPP_ALIASES)
+    cd = find_column(fieldnames, CMP_DATUM_ALIASES)
+    if cf is None:
+        print(
+            "FEL: Hittade ingen fakturanummer-kolumn i jamforelsefilen "
+            f"(hittade: {list(fieldnames)}). Jamforelsen avbryts."
+        )
+        return
+
+    # --- Bygg uppslag fran Visma clean-filen ---
+    visma_map: dict[str, dict] = {}
+    for item in clean_items:
+        row = item["row"]
+        key = normalize_invoice(row.get(item["faktnr_col"], ""))
+        if not key:
+            continue
+        belopp_raw = row.get(item["belopp_col"], "") if item["belopp_col"] else ""
+        datum_raw = row.get(item["datum_col"], "") if item["datum_col"] else ""
+        visma_map.setdefault(key, {
+            "belopp_raw": belopp_raw,
+            "belopp_dec": parse_amount(belopp_raw),
+            "datum_raw": datum_raw,
+            "date": item["sort_key"],
+        })
+
+    # --- Bygg uppslag fran exporten over betalda fakturor ---
+    betalda_map: dict[str, dict] = {}
+    for row in cmp_rows:
+        key = normalize_invoice(row.get(cf, ""))
+        if not key:
+            continue
+        belopp_raw = row.get(cb, "") if cb else ""
+        datum_raw = row.get(cd, "") if cd else ""
+        betalda_map.setdefault(key, {
+            "belopp_raw": belopp_raw,
+            "belopp_dec": parse_amount(belopp_raw),
+            "datum_raw": datum_raw,
+            "date": parse_date(datum_raw),
+        })
+
+    visma_keys = set(visma_map)
+    betalda_keys = set(betalda_map)
+    only_betalda = sorted(betalda_keys - visma_keys)   # SAKNAS_I_VISMA
+    only_visma = sorted(visma_keys - betalda_keys)     # SAKNAS_I_BETALDA_FAKTUROR
+    both = sorted(visma_keys & betalda_keys)
+
+    avvikelser: list[dict] = []
+
+    for key in only_betalda:
+        b = betalda_map[key]
+        avvikelser.append({
+            "Avvikelsetyp": "SAKNAS_I_VISMA",
+            "Fakturanummer": key,
+            "Belopp_Visma": "",
+            "Belopp_Betalda_fakturor": b["belopp_raw"],
+            "Betalningsdatum_Visma": "",
+            "Betalningsdatum_Betalda_fakturor": b["datum_raw"],
+            "Kommentar": "Finns i betalda fakturor men saknas i Visma-loggen - "
+                         "inbetalning kan vara oregistrerad i Visma.",
+        })
+
+    for key in only_visma:
+        v = visma_map[key]
+        avvikelser.append({
+            "Avvikelsetyp": "SAKNAS_I_BETALDA_FAKTUROR",
+            "Fakturanummer": key,
+            "Belopp_Visma": v["belopp_raw"],
+            "Belopp_Betalda_fakturor": "",
+            "Betalningsdatum_Visma": v["datum_raw"],
+            "Betalningsdatum_Betalda_fakturor": "",
+            "Kommentar": "Finns i Visma-loggen men saknas i exporten over betalda fakturor.",
+        })
+
+    belopp_avvik = 0
+    datum_avvik = 0
+    for key in both:
+        v = visma_map[key]
+        b = betalda_map[key]
+        if v["belopp_dec"] is not None and b["belopp_dec"] is not None \
+                and v["belopp_dec"] != b["belopp_dec"]:
+            belopp_avvik += 1
+            avvikelser.append({
+                "Avvikelsetyp": "BELOPPSAVVIKELSE",
+                "Fakturanummer": key,
+                "Belopp_Visma": v["belopp_raw"],
+                "Belopp_Betalda_fakturor": b["belopp_raw"],
+                "Betalningsdatum_Visma": v["datum_raw"],
+                "Betalningsdatum_Betalda_fakturor": b["datum_raw"],
+                "Kommentar": "Beloppen skiljer sig at.",
+            })
+        if v["date"] is not None and b["date"] is not None and v["date"] != b["date"]:
+            datum_avvik += 1
+            avvikelser.append({
+                "Avvikelsetyp": "DATUMAVVIKELSE",
+                "Fakturanummer": key,
+                "Belopp_Visma": v["belopp_raw"],
+                "Belopp_Betalda_fakturor": b["belopp_raw"],
+                "Betalningsdatum_Visma": v["datum_raw"],
+                "Betalningsdatum_Betalda_fakturor": b["datum_raw"],
+                "Kommentar": "Betalningsdatumen skiljer sig at.",
+            })
+
+    # --- Skriv avvikelsefil ---
+    avvik_name = f"visma_inbetalningar_{payment_type}_{month_name}_{year}_avvikelser.csv"
+    avvik_path = os.path.join(folder, avvik_name)
+    with open(avvik_path, "w", newline="", encoding=OUTPUT_ENCODING) as fh:
+        writer = csv.DictWriter(fh, fieldnames=AVVIKELSE_COLUMNS, delimiter=CSV_DELIMITER)
+        writer.writeheader()
+        for rad in avvikelser:
+            writer.writerow(rad)
+
+    # --- Sammanstallning av jamforelsen ---
+    print("\n" + "=" * 60)
+    print(" AVSTAMNING")
+    print("=" * 60)
+    print(f"  Fakturor i Visma clean-fil:      {len(visma_map)}")
+    print(f"  Fakturor i betalda-exporten:     {len(betalda_map)}")
+    print(f"  Matchande fakturor:              {len(both)}")
+    print(f"  Saknas i Visma:                  {len(only_betalda)}")
+    print(f"  Endast i Visma-loggen:           {len(only_visma)}")
+    print(f"  Beloppsavvikelser:               {belopp_avvik}")
+    print(f"  Datumavvikelser:                 {datum_avvik}")
+    print(f"  Avvikelsefil:                    {avvik_path}")
+    print("=" * 60)
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
 def main() -> int:
@@ -458,6 +837,34 @@ def main() -> int:
     print(f"  Skapad fil:                 {out_path}")
     print("=" * 60)
 
+    # --- Steg 10-12: skapa fil utan dubbletter ---
+    if not prompt_yes_no("\nVill du skapa en ny fil utan dubbletter?"):
+        print("Avslutar. Den sammanstallda filen behalls:\n  " + out_path)
+        return 0
+
+    clean_items, removed, clean_warnings = build_clean(included)
+    # I clean-filen finns inga dubbletter kvar -> markera samtliga som NEJ.
+    for item in clean_items:
+        item["row"][DUPLICATE_COLUMN] = "NEJ"
+
+    clean_name = f"visma_inbetalningar_{payment_type}_{month_name}_{year}_clean_logg.csv"
+    clean_path = write_output(folder, clean_name, result["column_order"], clean_items)
+
+    if clean_warnings:
+        print("\nVARNINGAR (dubbletter med olika belopp/datum):")
+        for w in clean_warnings:
+            print(f"  - {w}")
+
+    print(f"\n  Borttagna dubbletter:       {removed}")
+    print(f"  Poster i clean-filen:       {len(clean_items)}")
+    print(f"  Fil utan dubbletter:        {clean_path}")
+
+    # --- Steg 13-18: jamforelse mot betalda fakturor ---
+    if not prompt_yes_no("\nVill du jamfora filen med en export over betalda fakturor?"):
+        print("Avslutar. Clean-filen behalls:\n  " + clean_path)
+        return 0
+
+    run_comparison(folder, payment_type, month_name, year, clean_items)
     return 0
 
 
