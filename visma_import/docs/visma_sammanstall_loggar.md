@@ -4,9 +4,12 @@ Sammanställer Visma-loggfiler (`visma_inbetalningar_logg_*_*.csv`) till **en** 
 för en vald månad, ett valt år och en vald betalningstyp.
 
 - **Fil:** `visma_import/visma_sammanstall_loggar.py`
-- **Beroenden:** Inga externa – endast Pythons standardbibliotek (Python 3.7+).
+- **Beroenden:** Inga för kärnflödet – endast Pythons standardbibliotek (Python 3.7+).
+  `openpyxl` krävs **endast** om jämförelsefilen (steg 14) är en Excel-fil (`.xlsx`/`.xlsm`);
+  installeras vid behov med `pip install openpyxl`. CSV fungerar utan externa beroenden.
 - **Syfte:** Slå ihop de enskilda körloggarna som skapas av
-  `visma_register_inbetalningar` till en samlad månadsfil, med dubblettkontroll.
+  `visma_register_inbetalningar` till en samlad månadsfil, med dubblettkontroll,
+  valfri dubblettrensning och valfri avstämning mot en export över betalda fakturor.
 
 ---
 
@@ -261,4 +264,23 @@ Terminalens sammanställning:
 | `READ_ENCODINGS` | `utf-8-sig`, `cp1252` | Kodningar som provas vid inläsning |
 | `OUTPUT_ENCODING` | `utf-8-sig` | Kodning för utdatafilen |
 | `DUPLICATE_COLUMN` | `Dubblett` | Namn på den tillagda dubblettkolumnen |
-| `*_ALIASES` | – | Tillåtna rubrikvarianter för respektive kolumn |
+| `BETALNINGSDATUM_ALIASES`, `STATUS_ALIASES`, `FAKTURANR_ALIASES`, `BELOPP_ALIASES`, `VISMADATUM_ALIASES` | – | Tillåtna rubrikvarianter i loggfilerna |
+| `CMP_FAKTURANR_ALIASES`, `CMP_BELOPP_ALIASES`, `CMP_DATUM_ALIASES` | – | Bredare rubrikvarianter för jämförelsefilen (betalda fakturor) |
+| `AVVIKELSE_COLUMNS` | 7 kolumner | Kolumnordning i avvikelsefilen |
+| `PAYMENT_TYPES` | `bank`, `skatteverket` | Giltiga betalningstyper |
+| `SWEDISH_MONTHS` | 1–12 | Svenska månadsnamn för filnamnet |
+
+### Funktionsöversikt
+
+| Funktion | Ansvar |
+|----------|--------|
+| `prompt_folder` / `prompt_month_year` / `prompt_payment_type` | Inmatning steg 1–2 |
+| `prompt_yes_no` / `prompt_existing_file` | Ja/Nej-frågor och filväg (steg 10, 13, 14) |
+| `collect_rows` | Läser loggfiler, filtrerar på OK + period (steg 3–4) |
+| `read_log_file` / `find_column` / `parse_date` / `status_is_ok` | Inläsning och tolkning |
+| `mark_duplicates` | Markerar `Dubblett` JA/NEJ (steg 6) |
+| `write_output` | Skriver logg- och clean-filen (steg 5, 7, 11) |
+| `build_clean` | Tar bort dubbletter, varnar vid belopps-/datumskillnad (steg 11) |
+| `normalize_invoice` / `parse_amount` | Normaliserar fakturanr och belopp för jämförelse |
+| `read_comparison_file` / `read_excel_rows` | Läser jämförelsefil (CSV/Excel) (steg 14) |
+| `run_comparison` | Avstämning, skriver avvikelsefil, visar sammanställning (steg 15–18) |
