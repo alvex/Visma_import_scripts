@@ -120,7 +120,6 @@ WAIT_AFTER_DATE = 0.12
 DIALOG_TIMEOUT = 3.0
 DIFFERENS_TIMEOUT = 7.0
 DIALOG_CLOSE_TIMEOUT = 3.0
-DIALOG_VALUE_TIMEOUT = 1.0  # maxvantan endast om dialogvardet inte kan lasas direkt
 NO_DIFFERENS_GRACE = 0.20   # kort kontroll nar ingen differens forvantas
 GUI_POLL_INTERVAL = 0.05    # aktiv dialogkontroll, utan blind lang vantetid
 
@@ -378,37 +377,15 @@ def parse_amount(value: Any) -> Optional[Decimal]:
     if not text:
         return None
 
-    # Visma/Windows kan exponera minustecknet pa flera satt. Hantera aven
-    # bokforingsformat med parentes eller ett avslutande minustecken.
-    text = text.translate(str.maketrans({"\u2212": "-", "\u2013": "-", "\u2014": "-"}))
-    negative_parentheses = text.startswith("(") and text.endswith(")")
-    if negative_parentheses:
-        text = text[1:-1].strip()
-    trailing_minus = text.endswith("-")
-    if trailing_minus:
-        text = text[:-1].strip()
-
-    # Ta bort valuta, apostrof och alla vanliga tusentalsmellanslag.
-    text = re.sub(r"(?i)\b(?:sek|kr)\b", "", text)
-    text = (
-        text.replace("\xa0", "")
-        .replace("\u202f", "")
-        .replace(" ", "")
-        .replace("'", "")
-        .replace("\u2019", "")
-    )
-
-    if negative_parentheses or trailing_minus:
-        text = "-" + text.lstrip("+")
+    # Ta bort valuta och mellanslag (aven hardmellanslag \xa0).
+    text = text.replace("kr", "").replace("SEK", "")
+    text = text.replace("\xa0", "").replace(" ", "")
 
     # Svensk decimal: komma -> punkt. Punkt anvands ibland som tusenavskiljare.
     if "," in text:
         # Anta komma = decimaltecken; ta bort punkter (tusenavskiljare).
         text = text.replace(".", "").replace(",", ".")
-    elif re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+", text):
-        # Svenskt heltalsformat med punkt som tusenavskiljare: -5.123 -> -5123.
-        text = text.replace(".", "")
-    # Annars tolkas en ensam punkt som decimaltecken (t.ex. 2017.0).
+    # annars: punkt tolkas som decimaltecken (t.ex. 2017.0)
 
     try:
         return Decimal(text)
@@ -519,11 +496,7 @@ class VismaGui:
         self._dumped: set = set()
         # En kontrolltrad per dialog ateranvands av text-, belopps-, combo- och
         # OK-sokning. Det undviker flera dyra descendants()-anrop per dialog.
-        # Behall sjalva dialog-wrappern tillsammans med dess kontroller. Den
-        # tidigare cachen anvande enbart id(dlg) och tomdes aldrig. Nar Python
-        # ateranvande ett id efter nagra stangda dialoger kunde en ny Differens-
-        # dialog fa gamla, ogiltiga kontroller och beloppet blev olasbart.
-        self._dialog_controls_cache: dict[int, tuple[Any, list]] = {}
+        self._dialog_controls_cache: dict[int, list] = {}
 
     def dump_dialog(self, dlg, tag: str) -> None:
         """
@@ -839,54 +812,19 @@ class VismaGui:
         except Exception as exc:
             print(f"  [DEBUG] Kunde inte lista fonster: {exc}")
 
-    def _forget_dialog_controls(self, dlg) -> None:
-        """Glom cachade kontroller nar en dialog har stangts."""
-        if dlg is None:
-            return
-        cache_key = id(dlg)
-        cached = self._dialog_controls_cache.get(cache_key)
-        if cached is not None and cached[0] is dlg:
-            self._dialog_controls_cache.pop(cache_key, None)
-
-    def _dialog_controls(self, dlg, refresh: bool = False) -> list:
-        """
-        Hamta dialogens kontrolltrad och ateranvand det inom samma oppna dialog.
-
-        ``refresh=True`` anvands nar ett nyoppnat Visma-fonster annu inte hunnit
-        fylla sina kontroller. Cachens starka referens forhindrar id-kollisioner.
-        """
+    def _dialog_controls(self, dlg) -> list:
+        """Hamta dialogens kontrolltrad en gang och ateranvand resultatet."""
         if dlg is None:
             return []
         cache_key = id(dlg)
-        cached = self._dialog_controls_cache.get(cache_key)
-        if not refresh and cached is not None and cached[0] is dlg:
-            return cached[1]
+        if cache_key in self._dialog_controls_cache:
+            return self._dialog_controls_cache[cache_key]
         try:
             controls = list(dlg.descendants())
         except Exception:
             controls = []
-        self._dialog_controls_cache[cache_key] = (dlg, controls)
+        self._dialog_controls_cache[cache_key] = controls
         return controls
-
-    def _alternate_backend_dialog(self, dlg):
-        """Skapa en tillfallig wrapper via den andra pywinauto-backenden."""
-        if dlg is None or Desktop is None:
-            return None
-        try:
-            handle = dlg.handle
-        except Exception:
-            return None
-        try:
-            current_backend = dlg.backend.name
-        except Exception:
-            current_backend = self.backend or "win32"
-        alternate_backend = "uia" if current_backend == "win32" else "win32"
-        try:
-            return Desktop(backend=alternate_backend).window(
-                handle=handle,
-            ).wrapper_object()
-        except Exception:
-            return None
 
     @staticmethod
     def _control_is(control, expected: str) -> bool:
@@ -910,130 +848,22 @@ class VismaGui:
             return True
         return False
 
-    @staticmethod
-    def _control_text_values(control) -> list[str]:
-        """Las en kontroll via bade Win32- och UIA-egenskaper, utan dubbletter."""
-        values: list[str] = []
-
-        def add(raw: Any) -> None:
-            if raw is None:
-                return
-            if isinstance(raw, (list, tuple)):
-                for item in raw:
-                    add(item)
-                return
-            value = str(raw).strip()
-            if value and value not in values:
-                values.append(value)
-
-        for getter_name in (
-            "window_text",
-            "get_value",
-            "texts",
-            "selected_text",
-        ):
-            try:
-                getter = getattr(control, getter_name)
-                add(getter())
-            except Exception:
-                continue
-
-        # UIA-kontroller kan ha tom window_text() men vardet i element_info.
-        # De har reservvagarna behovs bara nar de normala getter-anropen ar tomma.
-        if not values:
-            try:
-                add(control.element_info.name)
-            except Exception:
-                pass
-            try:
-                add(control.element_info.rich_text)
-            except Exception:
-                pass
-        if not values:
-            try:
-                properties = control.legacy_properties()
-                if isinstance(properties, dict):
-                    for key in ("Value", "value", "Name", "name"):
-                        add(properties.get(key))
-            except Exception:
-                pass
-        return values
-
-    def dialog_text(self, dlg, refresh: bool = False) -> str:
-        """Samlar all tillganglig dialogtext via flera kontroll-API:er."""
+    def dialog_text(self, dlg) -> str:
+        """Samlar all synlig text i dialogen (for verifiering av fakturanr/belopp)."""
         if dlg is None:
             return ""
         try:
-            parts: list[str] = []
-            for value in self._control_text_values(dlg):
-                if value not in parts:
-                    parts.append(value)
-            for child in self._dialog_controls(dlg, refresh=refresh):
-                for value in self._control_text_values(child):
-                    if value not in parts:
-                        parts.append(value)
+            parts = []
+            for child in self._dialog_controls(dlg):
+                try:
+                    t = child.window_text()
+                    if t:
+                        parts.append(t)
+                except Exception:
+                    continue
             return " | ".join(parts)
         except Exception:
             return ""
-
-    def read_expected_amount_in_dialog(
-        self,
-        dlg,
-        expected: Decimal,
-        timeout: float = DIALOG_VALUE_TIMEOUT,
-    ) -> tuple[Optional[Decimal], list[Decimal], str]:
-        """
-        Las om dialogen tills *expected* hittas eller timeout uppnas.
-
-        Alla beloppskandidater returneras for tydlig felsokning. Metoden valjer
-        aldrig blint "sista talet", vilket kan vara fakturanumret eller ett annat
-        belopp. Endast en exakt matchning pa oresniva godkanns.
-        """
-        expected = expected.quantize(Decimal("0.01"))
-        deadline = time.perf_counter() + max(0.0, timeout)
-        observed: list[Decimal] = []
-        latest_text = ""
-        refresh = False
-
-        while True:
-            latest_text = self.dialog_text(dlg, refresh=refresh)
-            for candidate in _extract_amounts_from_text(latest_text):
-                candidate = candidate.quantize(Decimal("0.01"))
-                if candidate not in observed:
-                    observed.append(candidate)
-                if candidate == expected:
-                    return candidate, observed, latest_text
-
-            remaining = deadline - time.perf_counter()
-            if remaining <= 0:
-                # Vissa aldre Visma-kontroller ar tomma via Win32 men lasbara
-                # via UIA (eller tvartom). Prova den andra backenden en enda
-                # gang och endast nar den snabba normala vagen misslyckats.
-                alternate_dialog = self._alternate_backend_dialog(dlg)
-                if alternate_dialog is not None:
-                    try:
-                        alternate_text = self.dialog_text(
-                            alternate_dialog,
-                            refresh=True,
-                        )
-                        if alternate_text:
-                            latest_text = " | ".join(
-                                part for part in (latest_text, alternate_text) if part
-                            )
-                        for candidate in _extract_amounts_from_text(alternate_text):
-                            candidate = candidate.quantize(Decimal("0.01"))
-                            if candidate not in observed:
-                                observed.append(candidate)
-                            if candidate == expected:
-                                return candidate, observed, latest_text
-                    finally:
-                        self._forget_dialog_controls(alternate_dialog)
-                return None, observed, latest_text
-
-            # Ett nyoppnat Visma-fonster kan vara synligt innan barnkontrollerna
-            # ar klara. Las darfor om kontrolltradet pa efterfoljande forsok.
-            refresh = True
-            time.sleep(min(GUI_POLL_INTERVAL, remaining))
 
     def click_ok_on_dialog(self, dlg=None) -> bool:
         """
@@ -1071,7 +901,6 @@ class VismaGui:
         """
         if Desktop is None:
             time.sleep(min(timeout, WAIT_AFTER_OK))
-            self._forget_dialog_controls(dialog)
             return True
         deadline = time.perf_counter() + max(0.0, timeout)
         while True:
@@ -1085,7 +914,6 @@ class VismaGui:
                 still_open = self._find_dialog_now(title_contains) is not None
 
             if not still_open:
-                self._forget_dialog_controls(dialog)
                 return True
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
@@ -1229,41 +1057,24 @@ class VismaGui:
         """Las det synliga valet i Differens-dialogens kombinationsruta."""
         if dlg is None:
             return ""
-        for refresh in (False, True):
-            try:
-                controls = [
-                    child for child in self._dialog_controls(dlg, refresh=refresh)
-                    if self._control_is(child, "ComboBox")
-                ]
-            except Exception:
-                controls = []
-            for control in controls:
-                for getter in (
-                    lambda: control.selected_text(),
-                    lambda: control.window_text(),
-                ):
-                    try:
-                        value = (getter() or "").strip()
-                        if value:
-                            return value
-                    except Exception:
-                        continue
-        alternate_dialog = self._alternate_backend_dialog(dlg)
-        if alternate_dialog is not None:
-            try:
-                controls = self._dialog_controls(alternate_dialog, refresh=True)
-                for control in controls:
-                    if not self._control_is(control, "ComboBox"):
-                        continue
-                    for getter_name in ("selected_text", "window_text"):
-                        try:
-                            value = (getattr(control, getter_name)() or "").strip()
-                            if value:
-                                return value
-                        except Exception:
-                            continue
-            finally:
-                self._forget_dialog_controls(alternate_dialog)
+        try:
+            controls = [
+                child for child in self._dialog_controls(dlg)
+                if self._control_is(child, "ComboBox")
+            ]
+        except Exception:
+            controls = []
+        for control in controls:
+            for getter in (
+                lambda: control.selected_text(),
+                lambda: control.window_text(),
+            ):
+                try:
+                    value = (getter() or "").strip()
+                    if value:
+                        return value
+                except Exception:
+                    continue
         return ""
 
     # --- Falt-navigering i huvudfonstret ------------------------------------
@@ -1833,46 +1644,37 @@ def process_row(
             "oppnades inte. Stoppar sa att nasta faktura inte paborjas."
         )
     if diff_dlg is not None:
+        diff_text = gui.dialog_text(diff_dlg)
+        if diff_text and row["fakturanr"] not in diff_text:
+            _stoppa(
+                f"'Differens' namner inte fakturanr {row['fakturanr']}. "
+                f"Dialogtext: {diff_text[:200]}. Stoppar.",
+                stang_dialog=True,
+            )
+
         # Oberoende kontroll: Differens ska exakt motsvara Excel-beloppet minus
         # Vismas ursprungliga fakturabelopp. Exempel: 1465 - 2881 = -1416,00.
-        diff_text = gui.dialog_text(diff_dlg)
         if visma_amount is not None:
             expected_difference = (
                 row["belopp_dec"] - visma_amount
             ).quantize(Decimal("0.01"))
-            (
-                actual_difference,
-                observed_differences,
-                diff_text,
-            ) = gui.read_expected_amount_in_dialog(
-                diff_dlg,
-                expected_difference,
-            )
+            actual_difference = _extract_amount_from_text(diff_text)
             if actual_difference is None:
-                observed_text = (
-                    ", ".join(f"{value:.2f}" for value in observed_differences)
-                    if observed_differences
-                    else "inga"
-                )
                 _stoppa(
-                    "Kunde inte verifiera beloppsdifferensen i dialogen. "
-                    f"Forvantade {expected_difference:.2f}; upptackta belopp: "
-                    f"{observed_text}. Dialogtext: {diff_text[:250]!r}. "
-                    "Stoppar utan OK.",
+                    "Kunde inte lasa beloppsdifferensen i dialogen. "
+                    f"Forvantade {expected_difference:.2f}. Stoppar utan OK.",
+                    stang_dialog=True,
+                )
+            actual_difference = actual_difference.quantize(Decimal("0.01"))
+            if actual_difference != expected_difference:
+                _stoppa(
+                    "Fel differens i Visma-dialogen. "
+                    f"Forvantat {expected_difference:.2f}, men dialogen visar "
+                    f"{actual_difference:.2f}. Stoppar utan OK sa att inget "
+                    "felaktigt belopp registreras.",
                     stang_dialog=True,
                 )
             print(f"  Differens verifierad: {actual_difference:.2f}")
-
-        # Gor fakturakontrollen efter den aktiva omlasningen ovan. En nyoppnad
-        # dialog kan annars ha hunnit visa fonstret men inte all barntext.
-        mentioned_invoices = _explicit_invoice_numbers_from_text(diff_text)
-        if mentioned_invoices and row["fakturanr"] not in mentioned_invoices:
-            _stoppa(
-                f"'Differens' namner inte fakturanr {row['fakturanr']}. "
-                f"Upptackta fakturanummer: {mentioned_invoices}. "
-                f"Dialogtext: {diff_text[:200]}. Stoppar.",
-                stang_dialog=True,
-            )
 
         selected_option = gui.difference_option_text(diff_dlg)
         option_source = f"{selected_option} | {diff_text}"
@@ -1913,63 +1715,18 @@ def process_row(
     return Status.OK
 
 
-def _extract_amounts_from_text(text: str) -> list[Decimal]:
-    """
-    Plocka ut alla beloppskandidater ur dialogtext i visningsordning.
-
-    Stoder bl.a. ``-5 123,00``, ``- 5 123,00``, ``−5.123,00``,
-    ``(5 123,00)`` och signerade heltal som ``-5123``. Osignerade heltal
-    ignoreras eftersom de ofta ar fakturanummer.
-    """
-    if not text:
-        return []
-
-    normalized = text.translate(
-        str.maketrans({"\u2212": "-", "\u2013": "-", "\u2014": "-"})
-    )
-    group_chars = r"\d\s\xa0\u202f.'\u2019"
-    patterns = [
-        # Belopp med exakt tva decimaler. Minustecknet far vara separerat.
-        rf"(?<!\d)\(?\s*[+-]?\s*\d[{group_chars}]*[,.]\d{{2}}\s*-?\s*\)?",
-        # Signerat heltal eller parentesformat nar Visma doljer ,00.
-        rf"(?<![\d,.])(?:-\s*\d(?:[{group_chars}]*\d)?|\(\s*\d(?:[{group_chars}]*\d)?\s*\)|\d(?:[{group_chars}]*\d)?\s*-)(?![\d,.])",
-    ]
-
-    matches: list[tuple[int, int, str]] = []
-    occupied: list[tuple[int, int]] = []
-    for pattern_index, pattern in enumerate(patterns):
-        for match in re.finditer(pattern, normalized):
-            span = match.span()
-            if pattern_index > 0 and any(
-                span[0] < end and span[1] > start for start, end in occupied
-            ):
-                continue
-            matches.append((span[0], span[1], match.group(0)))
-            occupied.append(span)
-
-    amounts: list[Decimal] = []
-    for _, _, raw in sorted(matches, key=lambda item: item[0]):
-        parsed = parse_amount(raw)
-        if parsed is not None and parsed not in amounts:
-            amounts.append(parsed)
-    return amounts
-
-
 def _extract_amount_from_text(text: str) -> Optional[Decimal]:
-    """Bakkompatibel hjalpare: returnera dialogtextens sista belopp."""
-    candidates = _extract_amounts_from_text(text)
-    return candidates[-1] if candidates else None
-
-
-def _explicit_invoice_numbers_from_text(text: str) -> list[str]:
-    """Hamta endast nummer som uttryckligen markts som fakturanummer."""
+    """Forsoker plocka ut ett belopp (svensk decimal) ur dialogtext."""
     if not text:
-        return []
-    pattern = (
-        rf"(?i)(?:faktura(?:nummer|nr)?|fakt\.?\s*nr)"
-        rf"[^\d]{{0,20}}(\d{{{INVOICE_MIN_DIGITS},{INVOICE_MAX_DIGITS}}})"
-    )
-    return list(dict.fromkeys(re.findall(pattern, text)))
+        return None
+    # Leta efter monster som 1 396,00 / 2017,00 / 2 017.00
+    candidates = re.findall(r"-?\d[\d\s\xa0.]*,\d{2}", text)
+    if not candidates:
+        candidates = re.findall(r"-?\d[\d\s\xa0.]*\.\d{2}", text)
+    if not candidates:
+        return None
+    # Ta det sista (oftast 'Andra till'-beloppet).
+    return parse_amount(candidates[-1])
 
 
 # ===========================================================================
@@ -2362,9 +2119,6 @@ def _self_test() -> None:
     assert parse_amount("2017,00") == Decimal("2017.00")
     assert parse_amount("2 017,00") == Decimal("2017.00")
     assert parse_amount("1 396,50") == Decimal("1396.50")
-    assert parse_amount("− 5 123,00") == Decimal("-5123.00")
-    assert parse_amount("(5 123,00)") == Decimal("-5123.00")
-    assert parse_amount("5 123,00-") == Decimal("-5123.00")
     assert parse_amount("") is None
     print("  parse_amount: OK")
 
@@ -2428,50 +2182,7 @@ def _self_test() -> None:
     assert _extract_amount_from_text(
         "Skillnad '-1 416,00' hanteras som Restbelopp pa fakturan"
     ) == Decimal("-1416.00")
-    assert _extract_amounts_from_text(
-        "Fakt.nr 49807 | Belopp 2 881,00 | Differens − 1 416,00"
-    ) == [Decimal("2881.00"), Decimal("-1416.00")]
-    assert _extract_amount_from_text("Differens -5123") == Decimal("-5123")
-    assert _extract_amount_from_text("Differens (5 123,00)") == Decimal("-5123.00")
-    assert _explicit_invoice_numbers_from_text(
-        "Fakt.nr: 49807 | Differens -5 123,00"
-    ) == ["49807"]
-
-    # Regressionstest: ett nyoppnat dialogfonster kan vara synligt innan dess
-    # barnkontroller ar klara. Den gamla permanenta id-cachen fastnade da pa en
-    # tom/stale kontrollista efter nagra fakturor.
-    class _FakeDifferenceValue:
-        def window_text(self):
-            return ""
-
-        def get_value(self):
-            return "− 5 123,00"
-
-    class _FakeDynamicDifferenceDialog:
-        def __init__(self):
-            self.calls = 0
-            self.value_control = _FakeDifferenceValue()
-
-        def descendants(self):
-            self.calls += 1
-            return [] if self.calls == 1 else [self.value_control]
-
-    dynamic_dialog = _FakeDynamicDifferenceDialog()
-    dynamic_gui = VismaGui(load_saved_calibration=False)
-    assert dynamic_gui.dialog_text(dynamic_dialog) == ""
-    actual, observed, raw_text = dynamic_gui.read_expected_amount_in_dialog(
-        dynamic_dialog,
-        Decimal("-5123.00"),
-        timeout=0.20,
-    )
-    assert actual == Decimal("-5123.00")
-    assert observed == [Decimal("-5123.00")]
-    assert "5 123,00" in raw_text
-    assert dynamic_dialog.calls >= 2
-    assert dynamic_gui._dialog_controls_cache[id(dynamic_dialog)][0] is dynamic_dialog
-    dynamic_gui._forget_dialog_controls(dynamic_dialog)
-    assert id(dynamic_dialog) not in dynamic_gui._dialog_controls_cache
-    print("  exakt belopps-, differens- och dialogcacheverifiering: OK")
+    print("  exakt belopps- och differensverifiering: OK")
 
     print("\nAlla self-tester gick igenom.")
 

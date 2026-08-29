@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visma Import – Skript &amp; dokumentation</title>
+<style>
+  :root{
+    --bg:#f4f6f9;
+    --surface:#ffffff;
+    --border:#e2e6ec;
+    --text:#1c2530;
+    --muted:#5a6673;
+    --accent:#1f6feb;
+    --accent-soft:#e8f0fe;
+    --code-bg:#eef1f5;
+    --shadow:0 1px 2px rgba(20,30,45,.06), 0 4px 14px rgba(20,30,45,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12161c;
+      --surface:#1b212a;
+      --border:#2a323d;
+      --text:#e6ebf1;
+      --muted:#9aa6b4;
+      --accent:#4d94ff;
+      --accent-soft:#1d2a3d;
+      --code-bg:#232b35;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px;}
+
+  header{
+    padding:40px 0 24px;
+    border-bottom:1px solid var(--border);
+  }
+  header h1{margin:0 0 6px;font-size:1.7rem;letter-spacing:-.02em;}
+  header p{margin:0;color:var(--muted);font-size:1rem;}
+
+  nav{
+    position:sticky;top:0;z-index:10;
+    background:var(--bg);
+    border-bottom:1px solid var(--border);
+    margin-bottom:32px;
+  }
+  nav .wrap{display:flex;gap:8px;padding-top:10px;padding-bottom:10px;}
+  nav a{
+    text-decoration:none;color:var(--muted);font-weight:500;font-size:.92rem;
+    padding:6px 12px;border-radius:8px;
+  }
+  nav a:hover{background:var(--accent-soft);color:var(--accent);}
+
+  section{margin-bottom:44px;}
+  h2{font-size:1.25rem;margin:0 0 4px;letter-spacing:-.01em;}
+  .section-sub{color:var(--muted);margin:0 0 20px;font-size:.95rem;}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:18px 18px 16px;
+    box-shadow:var(--shadow);
+    display:flex;flex-direction:column;
+  }
+  .card h3{
+    margin:0 0 10px;font-size:.98rem;font-weight:600;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    word-break:break-all;color:var(--accent);
+  }
+  .card p{margin:0 0 14px;color:var(--text);font-size:.92rem;flex:1;}
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+  .tag{
+    font-size:.72rem;color:var(--muted);background:var(--code-bg);
+    padding:2px 8px;border-radius:999px;
+  }
+  .doclinks{display:flex;flex-wrap:wrap;gap:8px;}
+  .doclinks a{
+    text-decoration:none;font-size:.82rem;font-weight:500;
+    color:var(--accent);background:var(--accent-soft);
+    padding:5px 10px;border-radius:8px;border:1px solid transparent;
+  }
+  .doclinks a:hover{border-color:var(--accent);}
+  .nodoc{font-size:.82rem;color:var(--muted);font-style:italic;}
+
+  .doc-list{list-style:none;margin:0;padding:0;display:grid;gap:10px;}
+  .doc-list li{
+    background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    padding:12px 16px;display:flex;align-items:center;gap:14px;
+    box-shadow:var(--shadow);
+  }
+  .doc-list .ico{font-size:1.2rem;flex-shrink:0;}
+  .doc-list .meta{flex:1;min-width:0;}
+  .doc-list .meta a{color:var(--text);text-decoration:none;font-weight:600;font-size:.95rem;}
+  .doc-list .meta a:hover{color:var(--accent);text-decoration:underline;}
+  .doc-list .meta span{display:block;color:var(--muted);font-size:.82rem;}
+  .doc-list .type{
+    font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--muted);background:var(--code-bg);padding:3px 8px;border-radius:6px;flex-shrink:0;
+  }
+
+  footer{
+    border-top:1px solid var(--border);
+    padding:24px 0 40px;color:var(--muted);font-size:.85rem;
+  }
+  code{
+    font-family:"SFMono-Regular",Consolas,Menlo,monospace;
+    background:var(--code-bg);padding:1px 5px;border-radius:5px;font-size:.85em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>Visma Import</h1>
+    <p>Skript och dokumentation för automatisk och halvautomatisk registrering i Visma Compact 6.</p>
+  </div>
+</header>
+
+<nav>
+  <div class="wrap">
+    <a href="#skript">Skript</a>
+    <a href="#dokumentation">Dokumentation</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <section id="skript">
+    <h2>Skript</h2>
+    <p class="section-sub">Fyra Python-skript för fakturor, inbetalningar och loggsammanställning.</p>
+    <div class="grid">
+
+      <article class="card">
+        <h3>visma_register_inbetalningar_fixed.py</h3>
+        <p>Halvautomatisk registrering av kundinbetalningar i Visma Compact 6 (Kundreskontra → Inbetalningar) från en Excel- eller CSV-fil. Kontrollerar beloppet exakt på öresnivå, hanterar dialogerna <em>Rätt belopp?</em> och <em>Differens</em>, och kör i säkert standardläge (DRY_RUN). Den slutliga bokföringen görs alltid manuellt.</p>
+        <div class="tags"><span class="tag">pandas</span><span class="tag">pyautogui</span><span class="tag">pywinauto</span><span class="tag">Excel / CSV</span></div>
+        <div class="doclinks">
+          <a href="docs/Manual_Visma_inbetalningar.pdf">Manual (PDF)</a>
+          <a href="docs/Manual_Visma_inbetalningar.md">Manual (MD)</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>visma_register_inbetalningar_old.py</h3>
+        <p>Tidigare, CSV-baserad variant av samma halvautomatiska inbetalningsregistrering i Visma Compact 6. Läser en semikolonseparerad UTF-8-fil (<code>data.csv</code>) och matar in betalningarna. Öppnar aldrig program själv och kör som standard i säkert läge med bekräftelse per rad.</p>
+        <div class="tags"><span class="tag">pandas</span><span class="tag">pyautogui</span><span class="tag">pywinauto</span><span class="tag">CSV</span></div>
+        <div class="doclinks">
+          <a href="docs/Manual_Visma_inbetalningar.pdf">Manual (PDF)</a>
+          <a href="docs/Manual_Visma_inbetalningar.md">Manual (MD)</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>visma_import.py</h3>
+        <p>Automatisk fakturaregistrering i Visma Compact. Läser fakturor med pandas och matar via tangentbord/mus (pyautogui) in KundID, bokföringsdatum och fakturabelopp, följt av Tab och Num+ för att spara. Har ett testläge som begränsar antalet fakturor tills flödet är verifierat.</p>
+        <div class="tags"><span class="tag">pandas</span><span class="tag">pyautogui</span><span class="tag">Fakturor</span></div>
+        <div class="doclinks">
+          <span class="nodoc">Ingen separat dokumentation</span>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>visma_sammanstall_loggar.py</h3>
+        <p>Sammanställer de enskilda körloggarna (<code>visma_inbetalningar_logg_*_*.csv</code>) till en samlad CSV-fil för vald månad, år och betalningstyp. Tar med poster med status OK, sorterar efter betalningsdatum, markerar dubbletter och kan stämma av mot en export över betalda fakturor. Endast Pythons standardbibliotek krävs.</p>
+        <div class="tags"><span class="tag">Standardbibliotek</span><span class="tag">CSV</span><span class="tag">Dubblettkontroll</span></div>
+        <div class="doclinks">
+          <a href="docs/visma_sammanstall_loggar.md">Dokumentation (MD)</a>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="dokumentation">
+    <h2>Dokumentation</h2>
+    <p class="section-sub">All dokumentation i mappen <code>docs/</code>.</p>
+    <ul class="doc-list">
+
+      <li>
+        <span class="ico">📕</span>
+        <span class="meta">
+          <a href="docs/Manual_Visma_inbetalningar.pdf">Manual: Registrera kundinbetalningar</a>
+          <span>Fullständig manual för registrering av kundinbetalningar i Visma Compact 6.</span>
+        </span>
+        <span class="type">PDF</span>
+      </li>
+
+      <li>
+        <span class="ico">📄</span>
+        <span class="meta">
+          <a href="docs/Manual_Visma_inbetalningar.md">Manual: Registrera kundinbetalningar</a>
+          <span>Samma manual i Markdown-format.</span>
+        </span>
+        <span class="type">MD</span>
+      </li>
+
+      <li>
+        <span class="ico">📄</span>
+        <span class="meta">
+          <a href="docs/visma_sammanstall_loggar.md">Sammanställning av loggar</a>
+          <span>Beskrivning av hur körloggar slås ihop till en månadsfil med dubblettkontroll och avstämning.</span>
+        </span>
+        <span class="type">MD</span>
+      </li>
+
+      <li>
+        <span class="ico">🎬</span>
+        <span class="meta">
+          <a href="docs/2026-08-19%2023%2007%2051.mp4">Demovideo (2026-08-19)</a>
+          <span>Skärminspelning som visar registreringsflödet.</span>
+        </span>
+        <span class="type">MP4</span>
+      </li>
+
+    </ul>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    Visma Import · lokal översikt · öppnas direkt i webbläsaren.
+  </div>
+</footer>
+
+</body>
+</html>
