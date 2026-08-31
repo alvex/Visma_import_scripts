@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>visma_konvertera_betalningar.py – Dokumentation &amp; rapport</title>
+<style>
+  :root{
+    --bg:#f4f6f9;
+    --surface:#ffffff;
+    --border:#e2e6ec;
+    --text:#1c2530;
+    --muted:#5a6673;
+    --accent:#1f6feb;
+    --accent-soft:#e8f0fe;
+    --code-bg:#eef1f5;
+    --ok:#1a7f37;
+    --ok-soft:#e6f4ea;
+    --shadow:0 1px 2px rgba(20,30,45,.06), 0 4px 14px rgba(20,30,45,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12161c;
+      --surface:#1b212a;
+      --border:#2a323d;
+      --text:#e6ebf1;
+      --muted:#9aa6b4;
+      --accent:#4d94ff;
+      --accent-soft:#1d2a3d;
+      --code-bg:#232b35;
+      --ok:#4ac26b;
+      --ok-soft:#17301f;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 20px;}
+
+  header{padding:40px 0 24px;border-bottom:1px solid var(--border);}
+  header .back{
+    display:inline-block;margin-bottom:14px;text-decoration:none;
+    color:var(--accent);font-size:.88rem;font-weight:500;
+  }
+  header .back:hover{text-decoration:underline;}
+  header h1{
+    margin:0 0 6px;font-size:1.5rem;letter-spacing:-.02em;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  header p{margin:0;color:var(--muted);font-size:1rem;}
+
+  section{margin:36px 0;}
+  h2{font-size:1.2rem;margin:0 0 12px;letter-spacing:-.01em;
+     padding-bottom:6px;border-bottom:1px solid var(--border);}
+  h3{font-size:1rem;margin:22px 0 8px;}
+  p{margin:0 0 14px;}
+
+  ul,ol{margin:0 0 14px;padding-left:22px;}
+  li{margin:4px 0;}
+
+  code{
+    font-family:"SFMono-Regular",Consolas,Menlo,monospace;
+    background:var(--code-bg);padding:1px 5px;border-radius:5px;font-size:.85em;
+  }
+  pre{
+    background:var(--code-bg);border:1px solid var(--border);border-radius:10px;
+    padding:14px 16px;overflow-x:auto;font-size:.82rem;line-height:1.5;
+    font-family:"SFMono-Regular",Consolas,Menlo,monospace;
+  }
+
+  table{border-collapse:collapse;width:100%;margin:0 0 16px;font-size:.9rem;}
+  th,td{border:1px solid var(--border);padding:8px 12px;text-align:left;}
+  th{background:var(--code-bg);font-weight:600;}
+  td code{background:transparent;padding:0;}
+
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 20px;}
+  .tag{font-size:.72rem;color:var(--muted);background:var(--code-bg);
+       padding:3px 10px;border-radius:999px;}
+
+  .callout{
+    background:var(--surface);border:1px solid var(--border);
+    border-left:3px solid var(--accent);border-radius:10px;
+    padding:14px 16px;margin:0 0 16px;box-shadow:var(--shadow);
+  }
+  .report{
+    background:var(--ok-soft);border:1px solid var(--border);
+    border-left:3px solid var(--ok);border-radius:10px;
+    padding:16px 18px;box-shadow:var(--shadow);
+  }
+  .report h2{border:none;margin-top:0;color:var(--ok);}
+  .status-ok{color:var(--ok);font-weight:600;}
+
+  footer{border-top:1px solid var(--border);padding:24px 0 40px;
+         color:var(--muted);font-size:.85rem;margin-top:40px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="back" href="index.html">&larr; Tillbaka till översikten</a>
+    <h1>visma_konvertera_betalningar.py</h1>
+    <p>Konverterar CSV-filer med betalningsdata till Visma-format – kolumnbyte, omsortering och summeringslogg.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="tags" style="margin-top:24px;">
+    <span class="tag">pandas</span>
+    <span class="tag">CSV</span>
+    <span class="tag">UTF-8-sig</span>
+    <span class="tag">Batchbearbetning</span>
+  </div>
+
+  <section id="oversikt">
+    <h2>Översikt</h2>
+    <p>
+      Skriptet läser alla <code>.csv</code>-filer i en indata-mapp, byter namn på och sorterar om
+      kolumnerna till den ordning Visma förväntar sig, och sparar en ny fil per original med
+      <code>_visma</code> tillagt före filändelsen. Originalfilerna lämnas orörda. Till skärmen och
+      till en tidsstämplad loggfil skrivs en sammanställning med antal poster och summerat belopp per
+      fil samt en totalsumma.
+    </p>
+    <div class="callout">
+      Skriptet ändrar aldrig indatafilerna – all utdata skrivs till den separata utdata-mappen,
+      som skapas automatiskt om den inte finns.
+    </div>
+  </section>
+
+  <section id="flode">
+    <h2>Flöde</h2>
+    <ol>
+      <li>Fråga efter sökväg till mappen med indata-filer (valideras att den finns).</li>
+      <li>Fråga efter sökväg till utdata-mappen – skapas om den saknas.</li>
+      <li>Läs alla <code>.csv</code> direkt i indata-mappen (inte undermappar).</li>
+      <li>För varje fil: byt namn på kolumner, sortera om, summera belopp och spara som <code>*_visma.csv</code>.</li>
+      <li>Skriv logg till skärm och till <code>konverteringslogg_ÅÅÅÅMMDD_TTMMSS.txt</code> i utdata-mappen.</li>
+    </ol>
+  </section>
+
+  <section id="kolumner">
+    <h2>Kolumnbyte &amp; ordning</h2>
+    <p>Följande kolumner måste finnas i varje fil. Saknas någon hoppas filen över och orsaken loggas.</p>
+    <table>
+      <thead><tr><th>Original</th><th>Visma-namn</th></tr></thead>
+      <tbody>
+        <tr><td><code>Datum</code></td><td><code>Betalningsdatum</code></td></tr>
+        <tr><td><code>Avsändare</code></td><td><code>Kundnamn</code></td></tr>
+        <tr><td><code>Betalningsreferens</code></td><td><code>KundID</code></td></tr>
+        <tr><td><code>Fakturanummer</code></td><td><code>Fakturanr</code></td></tr>
+        <tr><td><code>Belopp</code></td><td><code>Belopp</code> (oförändrad)</td></tr>
+      </tbody>
+    </table>
+    <p>Utdata får exakt denna kolumnordning:</p>
+    <pre>Betalningsdatum ; Fakturanr ; Belopp ; Kundnamn ; KundID</pre>
+    <p>Eventuella extra kolumner behålls och läggs sist, efter <code>KundID</code>.</p>
+  </section>
+
+  <section id="krav">
+    <h2>Krav &amp; felhantering</h2>
+    <ul>
+      <li><strong>Teckenkodning:</strong> läser och skriver UTF-8 med BOM (<code>utf-8-sig</code>). Faller tillbaka till <code>cp1252</code> om filen inte kan läsas.</li>
+      <li><strong>Avgränsare:</strong> identifieras automatiskt från rubrikraden (semikolon eller komma) och behålls i utdata. Semikolon väljs vid lika antal.</li>
+      <li><strong>Belopp:</strong> mellanslag (även hårt mellanslag) tolkas som tusentalsavgränsare och komma som decimaltecken vid summering – men värdet skrivs oförändrat i utdatafilen.</li>
+      <li><strong>Saknade kolumner:</strong> filen hoppas över, saknade kolumner loggas, körningen fortsätter.</li>
+      <li><strong>Extra kolumner:</strong> behålls sist, efter <code>KundID</code>.</li>
+      <li><strong>Robusthet:</strong> ett fel i en enskild fil avbryter aldrig hela körningen.</li>
+    </ul>
+  </section>
+
+  <section id="anvandning">
+    <h2>Användning</h2>
+    <pre>python visma_konvertera_betalningar.py</pre>
+    <p>Skriptet frågar interaktivt efter indata- och utdata-mapp. Kräver <code>pandas</code>.</p>
+  </section>
+
+  <section id="logg">
+    <h2>Loggen innehåller</h2>
+    <ul>
+      <li>Antal filer som bearbetades och antal som hoppades över (med orsak).</li>
+      <li>Per fil: filnamn, antal poster (rader exkl. rubrik) och summa av <code>Belopp</code>.</li>
+      <li>Totalsumma av <code>Belopp</code> för samtliga filer.</li>
+    </ul>
+  </section>
+
+  <section id="rapport">
+    <div class="report">
+      <h2>Rapport: skapande &amp; verifiering</h2>
+      <p>Skriptet skapades <strong>2026-08-30</strong> och verifierades mot testdata med tre filer:
+        en semikolonseparerad fil med extra kolumn, en kommaseparerad fil och en fil med
+        avsiktligt saknad kolumn.</p>
+
+      <table>
+        <thead><tr><th>Kontroll</th><th>Resultat</th></tr></thead>
+        <tbody>
+          <tr><td>Kolumnbyte + omsortering</td><td class="status-ok">OK</td></tr>
+          <tr><td>Extra kolumn (<code>Notering</code>) placeras sist efter KundID</td><td class="status-ok">OK</td></tr>
+          <tr><td>Avgränsare bevaras (<code>;</code> resp. <code>,</code>)</td><td class="status-ok">OK</td></tr>
+          <tr><td>Belopp oförändrat i utdata (<code>1 234,50</code>, <code>500.25</code>)</td><td class="status-ok">OK</td></tr>
+          <tr><td>Korrekt summering (11 234,50 + 500,25 = 11 734,75)</td><td class="status-ok">OK</td></tr>
+          <tr><td>UTF-8 med BOM i utdata</td><td class="status-ok">OK</td></tr>
+          <tr><td>Fil med saknad kolumn hoppas över med orsak</td><td class="status-ok">OK</td></tr>
+          <tr><td>Originalfiler oförändrade</td><td class="status-ok">OK</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Exempel på körningens loggutdata</h3>
+      <pre>------------------------------------------------------------
+  andra.csv: 1 poster, summa Belopp 500,25  -&gt;  andra_visma.csv
+  betalningar.csv: 2 poster, summa Belopp 11 234,50  -&gt;  betalningar_visma.csv
+  HOPPAR ÖVER trasig.csv: saknar kolumner: Betalningsreferens, Fakturanummer.
+------------------------------------------------------------
+Filer bearbetade: 2
+Filer hoppade över: 1
+Totalsumma Belopp (alla filer): 11 734,75</pre>
+
+      <h3>Exempel på utdatafil (<code>betalningar_visma.csv</code>)</h3>
+      <pre>Betalningsdatum;Fakturanr;Belopp;Kundnamn;KundID;Notering
+2026-08-01;F-100;1 234,50;Firma AB;12345;test
+2026-08-02;F-101;10 000,00;Bolag KB;67890;ok</pre>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    Visma Import · dokumentation för <code>visma_konvertera_betalningar.py</code>.
+  </div>
+</footer>
+
+</body>
+</html>

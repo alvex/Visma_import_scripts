@@ -140,7 +140,7 @@
 
   <section id="skript">
     <h2>Skript</h2>
-    <p class="section-sub">Fyra Python-skript för fakturor, inbetalningar och loggsammanställning.</p>
+    <p class="section-sub">Fem Python-skript för fakturor, inbetalningar, konvertering och loggsammanställning.</p>
     <div class="grid">
 
       <article class="card">
@@ -169,6 +169,15 @@
         <div class="tags"><span class="tag">pandas</span><span class="tag">pyautogui</span><span class="tag">Fakturor</span></div>
         <div class="doclinks">
           <span class="nodoc">Ingen separat dokumentation</span>
+        </div>
+      </article>
+
+      <article class="card">
+        <h3>visma_konvertera_betalningar.py</h3>
+        <p>Konverterar CSV-filer med betalningsdata till Visma-format. Läser alla <code>.csv</code> i en indata-mapp, byter namn på och sorterar om kolumnerna (<code>Betalningsdatum, Fakturanr, Belopp, Kundnamn, KundID</code>) och sparar en ny fil per original med <code>_visma</code> före filändelsen. Originalen lämnas orörda. Identifierar avgränsare och teckenkodning automatiskt och skriver en summeringslogg per fil och totalt.</p>
+        <div class="tags"><span class="tag">pandas</span><span class="tag">CSV</span><span class="tag">UTF-8-sig</span><span class="tag">Batchbearbetning</span></div>
+        <div class="doclinks">
+          <a href="visma_konvertera_betalningar.html">Dokumentation &amp; rapport</a>
         </div>
       </article>
 
@@ -214,6 +223,15 @@
           <span>Beskrivning av hur körloggar slås ihop till en månadsfil med dubblettkontroll och avstämning.</span>
         </span>
         <span class="type">MD</span>
+      </li>
+
+      <li>
+        <span class="ico">📄</span>
+        <span class="meta">
+          <a href="visma_konvertera_betalningar.html">Konvertera betalningar till Visma-format</a>
+          <span>Beskrivning, kolumnmappning, felhantering samt rapport från skriptets skapande och verifiering.</span>
+        </span>
+        <span class="type">HTML</span>
       </li>
 
       <li>
