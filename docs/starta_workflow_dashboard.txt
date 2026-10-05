@@ -1,0 +1,13 @@
+#### **Starta:**
+Öppna  warp
+`cd workflow_dashboard (cd C:\laragon\www\visma_import\workflow_dashboard)
+VIGTIGK ATT KÖRA KOMMAND I TVÅ RADER:!`
+
+#### 
+python -m venv venv
+venv\Scripts\Activate.ps1
+
+pip install -r requirements.txt
+python app.py
+
+Sedan oppna http://127.0.0.1:5000

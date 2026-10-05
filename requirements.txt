@@ -1,2 +1,20 @@
+# Beroenden för betalnings- och Visma-flödet.
+# Installera allt med:  python -m pip install -r requirements.txt
+# (payment_register.py kräver dessutom:  python -m playwright install chromium)
+
+# --- Excel-läsning/-skrivning (alla rensnings-, sammanställnings- och CSV-skript) ---
 openpyxl>=3.1.2
+
+# --- Dataramar (visma_konvertera_betalningar.py, visma_register_inbetalningar_fixed.py, visma_import.py) ---
+pandas>=2.0
+
+# --- GUI-styrning av Visma Compact (tangentbord/mus/fönster) ---
+pyautogui>=0.9.54
+pywinauto>=0.6.9        # Endast Windows; krävs för skarp inbetalningsregistrering (--live)
+pyperclip>=1.8
+
+# --- Webbregistrering i fakturasystemet (payment_register.py) ---
 playwright>=1.44.0
+
+# --- Valfritt: endast om du matar in gamla .xls-filer i Visma-registreringen ---
+# xlrd>=2.0

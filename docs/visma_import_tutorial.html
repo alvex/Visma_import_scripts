@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial – visma_import.py</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1f2430; --muted:#5b6472; --line:#e3e7ee;
+    --brand:#1f6feb; --brand-dark:#0b4fc4;
+    --code-bg:#f5f7fa; --code-fg:#1f2430;
+    --tip-bg:#eef7ff; --tip-line:#1f6feb;
+    --warn-bg:#fff6ec; --warn-line:#e08a1e;
+    --danger-bg:#fdeeee; --danger-line:#d33;
+    --ok-bg:#eefaf1; --ok-line:#2fa25a;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:48px 32px 80px}
+  header.hero{
+    border-left:6px solid var(--brand); padding:6px 0 6px 20px; margin-bottom:8px;
+  }
+  header.hero .kicker{color:var(--brand-dark); font-weight:700; letter-spacing:.08em; text-transform:uppercase; font-size:12px}
+  h1{font-size:30px; line-height:1.2; margin:6px 0 6px}
+  .subtitle{color:var(--muted); margin:0 0 4px}
+  h2{font-size:21px; margin:38px 0 12px; padding-bottom:8px; border-bottom:2px solid var(--line)}
+  h3{font-size:16px; margin:22px 0 6px}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0; padding-left:24px}
+  li{margin:5px 0}
+  code{background:var(--code-bg); color:var(--code-fg); padding:1px 6px; border-radius:5px; font-family:"Cascadia Code",Consolas,"SF Mono",Menlo,monospace; font-size:.9em}
+  pre{background:var(--code-bg); color:var(--code-fg); padding:14px 16px; border-radius:8px; overflow-x:auto; border:1px solid var(--line); font-family:"Cascadia Code",Consolas,"SF Mono",Menlo,monospace; font-size:13.5px; line-height:1.5}
+  pre code{background:none; padding:0}
+  .note{border-radius:8px; padding:12px 16px; margin:14px 0; border-left:4px solid}
+  .tip{background:var(--tip-bg); border-color:var(--tip-line)}
+  .warn{background:var(--warn-bg); border-color:var(--warn-line)}
+  .danger{background:var(--danger-bg); border-color:var(--danger-line)}
+  .ok{background:var(--ok-bg); border-color:var(--ok-line)}
+  .note strong{display:block; margin-bottom:2px}
+  table{border-collapse:collapse; width:100%; margin:14px 0; font-size:14.5px}
+  th,td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top}
+  th{background:var(--code-bg)}
+  .flow{background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:16px; font-family:"Cascadia Code",Consolas,monospace; font-size:14px; line-height:1.9; text-align:center}
+  .flow b{color:var(--brand-dark)}
+  .step{display:flex; gap:14px; margin:16px 0; align-items:flex-start}
+  .step .n{flex:0 0 30px; height:30px; border-radius:50%; background:var(--brand); color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:15px}
+  .step .body{flex:1}
+  .step .body h3{margin-top:2px}
+  kbd{background:#fff; border:1px solid #bcc3cf; border-bottom-width:2px; border-radius:5px; padding:1px 7px; font-family:inherit; font-size:.85em}
+  footer{margin-top:48px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px}
+  .toc{background:var(--code-bg); border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin:20px 0}
+  .toc ol{margin:6px 0; padding-left:22px}
+  .toc a{color:var(--brand-dark); text-decoration:none}
+  @page{margin:16mm 14mm}
+  @media print{
+    .wrap{padding:0; max-width:none}
+    h2{break-after:avoid} h3{break-after:avoid}
+    pre,table,.note,.flow,.step{break-inside:avoid}
+    a{color:inherit; text-decoration:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Användarguide</div>
+  <h1>visma_import.py</h1>
+  <p class="subtitle">Automatisk registrering av kundfakturor i Visma Compact</p>
+</header>
+
+<p>Det här dokumentet visar hur du installerar och använder <code>visma_import.py</code>. Scriptet läser en Excel-fil och registrerar kundfakturor i Visma Compact (Kundbokning) automatiskt genom att styra mus och tangentbord.</p>
+
+<div class="note tip">
+  <strong>Så fungerar det kort</strong>
+  För varje rad i Excel klickar scriptet i rätt fält i Visma, skriver in värdena och sparar med <b>Num+</b>. Fakturanumret skapas av Visma; du anger själv vilket nummer serien börjar på och det kontrolleras mot Excel innan körningen startar.
+</div>
+
+<div class="toc">
+  <strong>Innehåll</strong>
+  <ol>
+    <li><a href="#krav">Förutsättningar</a></li>
+    <li><a href="#install">Installation</a></li>
+    <li><a href="#excel">Förbered Excel-filen</a></li>
+    <li><a href="#innan">Innan du kör</a></li>
+    <li><a href="#kor">Kör scriptet – steg för steg</a></li>
+    <li><a href="#flode">Flödet per faktura</a></li>
+    <li><a href="#logg">Loggfilen</a></li>
+    <li><a href="#fel">Felsökning</a></li>
+    <li><a href="#sakerhet">Säkerhetsråd</a></li>
+  </ol>
+</div>
+
+<h2 id="krav">1. Förutsättningar</h2>
+<ul>
+  <li><strong>Windows</strong> med <strong>Python 3</strong> installerat.</li>
+  <li><strong>Visma Compact</strong> installerat och inloggat.</li>
+  <li>En <strong>Excel-fil</strong> med fakturorna (se avsnitt 3).</li>
+  <li>Scriptet <code>visma_import.py</code> ligger i <code>C:\ekonomi\scripts</code>.</li>
+</ul>
+
+<h2 id="install">2. Installation</h2>
+
+<div class="step">
+  <div class="n">1</div>
+  <div class="body">
+    <h3>Kontrollera Python</h3>
+    <p>Öppna <strong>PowerShell</strong> (tryck <kbd>Win</kbd> + <kbd>R</kbd>, skriv <code>powershell</code>, <kbd>Enter</kbd>) och kör:</p>
+    <pre><code>python --version</code></pre>
+    <p>Får du ett versionsnummer (t.ex. <code>Python 3.12</code>) är Python installerat.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">2</div>
+  <div class="body">
+    <h3>Installera nödvändiga paket</h3>
+    <p>Kör en gång:</p>
+    <pre><code>pip install pandas pyautogui openpyxl</code></pre>
+    <ul>
+      <li><code>pandas</code> + <code>openpyxl</code> – läser och skriver Excel.</li>
+      <li><code>pyautogui</code> – styr mus och tangentbord.</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="excel">3. Förbered Excel-filen</h2>
+<p>Filen måste innehålla dessa kolumner (rubrikerna på första raden):</p>
+<table>
+  <tr><th>Kolumn</th><th>Innehåll</th><th>Godkända alternativa namn</th></tr>
+  <tr><td><strong>KundID</strong></td><td>Kundens ID / personnummer, t.ex. <code>830930-7596</code></td><td>Personnummer, Kundnummer</td></tr>
+  <tr><td><strong>Fakturanr</strong></td><td>Fakturanummer, t.ex. <code>48991</code> (heltal)</td><td>Fakturanummer, Faktura nr, Faktura Nr, FakturaNr</td></tr>
+  <tr><td><strong>Fakturadatum</strong></td><td>Datum, t.ex. <code>2026-06-15</code></td><td>Faktura datum</td></tr>
+  <tr><td><strong>Belopp</strong></td><td>Fakturabelopp, t.ex. <code>1845</code> eller <code>1845,50</code></td><td>Fakturabelopp</td></tr>
+</table>
+
+<div class="note tip">
+  <strong>Bra att veta</strong>
+  <ul style="margin:0">
+    <li><strong>Datum konverteras automatiskt</strong> till Vismas format <code>YY-MM-DD</code> (<code>2026-06-15</code> blir <code>26-06-15</code>).</li>
+    <li><strong>Belopp</strong> konverteras till svenskt format med komma (<code>1845</code> blir <code>1845,00</code>).</li>
+    <li>Lägg raderna i <strong>samma ordning som Visma skapar fakturanumren</strong> – ett nummer per rad, i löpande följd.</li>
+  </ul>
+</div>
+
+<h2 id="innan">4. Innan du kör</h2>
+<ol>
+  <li>Öppna <strong>Visma Compact → Kundreskontra → Kundbokning</strong>.</li>
+  <li><strong>Maximera</strong> Visma-fönstret (samma läge varje gång – scriptet klickar på fasta positioner i fönstret).</li>
+  <li>Se till att fakturaformuläret visas (fälten Kund ID, Bokf.dag, Fak.belopp syns).</li>
+  <li>Stäng eventuella popup-fönster i Visma.</li>
+</ol>
+
+<div class="note warn">
+  <strong>Om värden hamnar i fel fält</strong>
+  Scriptet klickar på positioner som anges högst upp i <code>visma_import.py</code> (<code>KUNDID_*</code>, <code>BOKFDAG_*</code>, <code>FAK_BELOPP_*</code>). Om din skärm/upplösning skiljer sig kan ett klick missa fältet. Justera då siffrorna där tills klicken träffar mitt i respektive fält. <code>X_RATIO</code> är andel av fönstrets bredd (0–1), <code>Y</code> är pixlar från fönstrets överkant.
+</div>
+
+<h2 id="kor">5. Kör scriptet – steg för steg</h2>
+
+<div class="step">
+  <div class="n">1</div>
+  <div class="body">
+    <h3>Starta scriptet</h3>
+    <p>I PowerShell:</p>
+    <pre><code>cd C:\ekonomi\scripts
+python visma_import.py</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">2</div>
+  <div class="body">
+    <h3>Ange Excel-filen</h3>
+    <pre><code>Ange sökväg till Excel-filen: C:\Ekonomi\Fak 2026\April\fakturor.xlsx</code></pre>
+    <p>Du kan klistra in hela sökvägen. Ändelsen <code>.xlsx</code> läggs till automatiskt om den saknas.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">3</div>
+  <div class="body">
+    <h3>Ange antal och startnummer</h3>
+    <pre><code>Excel innehåller 20 poster.
+Hur många fakturor ska registreras? (1-20): 5
+Starta från Fakturanr: 48995</code></pre>
+    <p>Scriptet hittar raden med <code>Fakturanr = 48995</code> och registrerar <strong>5 poster därifrån och framåt</strong> (48995–48999). Max 50 per körning.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">4</div>
+  <div class="body">
+    <h3>Bekräfta och starta</h3>
+    <p>Scriptet visar en sammanfattning och att Visma hittats. Tryck <kbd>Enter</kbd> för att starta. En nedräkning från 3 börjar – <strong>ta bort händerna från mus och tangentbord</strong>.</p>
+    <pre><code>Tryck Enter för att starta...
+Startar om 3...
+Startar om 2...
+Startar om 1...</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="n">5</div>
+  <div class="body">
+    <h3>Låt scriptet arbeta</h3>
+    <p>Scriptet styr nu musen och skriver i Visma helt själv. Rör inte datorn under tiden.</p>
+  </div>
+</div>
+
+<div class="note danger">
+  <strong>Nödstopp</strong>
+  Behöver du avbryta direkt: <strong>flytta muspekaren snabbt till skärmens övre vänstra hörn</strong>. Då stoppar scriptet omedelbart (PyAutoGUI failsafe) och ingen mer faktura sparas.
+</div>
+
+<h2 id="flode">6. Flödet per faktura</h2>
+<div class="flow">
+  <b>Kund ID</b> &nbsp;→&nbsp; <b>Bokf.dag</b> (datum) &nbsp;→&nbsp; <b>Fak.belopp</b> &nbsp;→&nbsp; <b>5 × Tab</b> &nbsp;→&nbsp; kort paus &nbsp;→&nbsp; <b>Num+</b>
+</div>
+<p>För varje rad: kunden laddas via KundID, datumet skrivs i Bokf.dag, beloppet i Fak.belopp, därefter 5 Tab och till sist <b>Num+</b> som sparar fakturan i Visma. Fakturanumret sätts av Visma automatiskt.</p>
+
+<div class="note tip">
+  <strong>Pausen före Num+</strong>
+  Inställningen <code>PAUSE_BEFORE_NUM_PLUS</code> (standard <code>1.0</code> sekund) ger en kort paus precis innan fakturan sparas. Höj värdet om du vill hinna se fälten innan varje sparning.
+</div>
+
+<h2 id="logg">7. Loggfilen</h2>
+<p>Efter körningen sparas en loggfil i <strong>samma mapp som Excel-filen</strong>:</p>
+<pre><code>visma_import_logg_ÅÅÅÅMMDD_TTMMSS.xlsx</code></pre>
+<p>Loggen innehåller en rad per behandlad faktura med bl.a.: <strong>Rad</strong>, <strong>KundID</strong>, <strong>Excel Fakturanr</strong>, <strong>Visma Fakturanr</strong>, <strong>Status</strong> (OK / STOPPAD) och <strong>Fel</strong>. Kontrollera alltid loggen efter en körning.</p>
+
+<h2 id="fel">8. Felsökning</h2>
+<table>
+  <tr><th>Meddelande / symptom</th><th>Orsak &amp; åtgärd</th></tr>
+  <tr>
+    <td><code>FEL: Visma Compact hittades inte.</code></td>
+    <td>Visma är inte öppet på Kundbokning. Öppna Kundreskontra → Kundbokning och kör igen.</td>
+  </tr>
+  <tr>
+    <td><code>Filen hittades inte</code></td>
+    <td>Fel sökväg till Excel. Kontrollera sökvägen; testa att klistra in den utan citattecken.</td>
+  </tr>
+  <tr>
+    <td><code>Fakturanr X finns inte i Excel</code></td>
+    <td>Startnumret matchar ingen rad. Kontrollera att numret finns i kolumnen <code>Fakturanr</code>.</td>
+  </tr>
+  <tr>
+    <td><code>FÖR FÅ POSTER FRÅN STARTNUMRET</code></td>
+    <td>Du bad om fler fakturor än det finns rader kvar från startnumret. Välj lägre antal eller tidigare startnummer.</td>
+  </tr>
+  <tr>
+    <td>Värden hamnar i fel fält (t.ex. beloppet i Info)</td>
+    <td>Klickpositionerna stämmer inte med din skärm. Justera <code>KUNDID_*</code>, <code>BOKFDAG_*</code>, <code>FAK_BELOPP_*</code> högst upp i scriptet (se avsnitt 4).</td>
+  </tr>
+  <tr>
+    <td>Datumet blir fel i Bokf.dag</td>
+    <td>Datumet konverteras alltid till <code>YY-MM-DD</code>. Kontrollera att Excel-datumet är ett giltigt datum.</td>
+  </tr>
+  <tr>
+    <td>Scriptet stannar mitt i</td>
+    <td>Titta i loggfilen: kolumnen <strong>Fel</strong> visar orsaken för den rad där det stoppade. Ingen faktura efter felet sparas.</td>
+  </tr>
+</table>
+
+<h2 id="sakerhet">9. Säkerhetsråd</h2>
+<ul>
+  <li><strong>Testa med 1 faktura först</strong> och kontrollera i Visma att alla fält blev rätt innan du kör hela serien.</li>
+  <li>Rör inte mus/tangentbord medan scriptet arbetar.</li>
+  <li>Ha alltid <strong>nödstoppet</strong> i åtanke: mus till övre vänstra hörnet.</li>
+  <li>Granska <strong>loggfilen</strong> efter varje körning.</li>
+  <li>Se till att Excel-serien är korrekt och i rätt ordning – scriptet litar på att raderna följer Vismas nummerserie.</li>
+</ul>
+
+<footer>
+  visma_import.py – användarguide. Scriptet ligger i <code>C:\ekonomi\scripts\visma_import.py</code>.
+</footer>
+
+</div>
+</body>
+</html>

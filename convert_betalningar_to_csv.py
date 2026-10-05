@@ -63,7 +63,7 @@ CSV_COLUMNS = ["Datum", "Avsändare", "Betalningsreferens", "Fakturanummer", "Be
 
 # När --input pekar på en mapp letar vi efter den samlade Bankgiro-filen.
 INPUT_PATTERN = "samlade_betalningar_*.xlsx"
-# Prefix för utdatafilerna (matchar expected_output i config.json).
+# Prefix för utdatafilerna.
 CSV_PREFIX = "betalningar_lista_to_reg"
 
 # Fakturanummer är normalt exakt 5 siffror i detta system.

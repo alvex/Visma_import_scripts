@@ -1,9 +1,9 @@
 Oppna fonstertitlar:
-  - 'python visma_register_inbetalningar_fixed.py "C:\\Ekonomi\\Fak_2026\\maj\\visma\\Rut…'
   - 'Rätt belopp?'
   - 'Visma Compact 6 - 556871-0262 HemFresh AB [25-09 - 26-08] - [Inbetalningar]'
-  - 'sammanstallning_001_to_reg_visma - Excel'
-  - 'input'
-  - 'visma_import'
+  - 'python visma_register_inbetalningar_fixed.py "C:\\Ekonomi\\Fak_2026\\juni\\visma\\Ru…'
+  - 'sammanstallning_002_to_reg - Excel'
+  - 'data'
+  - '*nytt 11 - Notepad++'
   - 'Microsoft Text Input Application'
   - 'Program Manager'

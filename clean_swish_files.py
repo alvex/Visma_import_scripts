@@ -5,7 +5,7 @@ kolumnerna Bokförd, Typ, Avsändare, Meddelande, Insättningar och Summa, och
 skapar en ny fil clean_swish_lista_<periodslut>.xlsx där perioden står överst,
 före själva tabellen.
 
-Körs via dashboarden med --input/--output, eller fristående från terminalen:
+Körs via dashboard.py (meny), eller fristående från terminalen:
     python clean_swish_files.py --input "C:\\...\\data" --output "C:\\...\\edit"
 """
 from __future__ import annotations

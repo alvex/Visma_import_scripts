@@ -22,7 +22,7 @@ Mappning:
     Fakturanummer     <- 5-siffrigt nummer extraherat ur Meddelande
     Belopp            <- Insättningar
 
-Körs via dashboarden med --input/--output/--date, eller fristående:
+Körs via dashboard.py (meny), eller fristående:
     python step_4_skapa_swish_csv.py --input "C:\\...\\output"
 """
 
