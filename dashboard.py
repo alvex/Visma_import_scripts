@@ -8,9 +8,10 @@ Interaktiv terminalmeny som orkestrerar hela betalnings- och Visma-flödet.
 Verktyget kör de befintliga skripten (via --input/--output) i rätt ordning –
 det innehåller ingen egen affärslogik, utan är enbart ett bekvämt gränssnitt.
 
-Konvention för mappar:
+Konvention för mappar (skapas automatiskt om de saknas):
     Arbetsmapp (WORK)   = mappen där råfilerna (Bankgiro/Swish) ligger.
-    Redigeringsmapp     = WORK\\edit, där rensade/sammanställda filer och CSV hamnar.
+    WORK\\processed      = bearbetade mellanresultat (rensade och sammanställda filer).
+    WORK\\output         = färdiga CSV-filer (registrerings-CSV, *_visma.csv, körloggar).
 
 Kör:
     python dashboard.py
@@ -75,10 +76,10 @@ def ask_folder(prompt: str) -> Path | None:
     return path
 
 
-def latest_visma_csv(edit_dir: Path) -> Path | None:
-    """Senast ändrade *_visma.csv i redigeringsmappen (indata till Visma-reg)."""
+def latest_visma_csv(output_dir: Path) -> Path | None:
+    """Senast ändrade *_visma.csv i output-mappen (indata till Visma-reg)."""
     candidates = [
-        p for p in edit_dir.glob("*_visma.csv")
+        p for p in output_dir.glob("*_visma.csv")
         if p.is_file() and not p.name.startswith("~$")
     ]
     if not candidates:
@@ -93,43 +94,43 @@ def pause() -> None:
 # =============================================================================
 # Menyåtgärder
 # =============================================================================
-def do_clean_bg(work: Path, edit: Path) -> None:
-    run([CLEAN_BG, "--input", work, "--output", edit])
+def do_clean_bg(work: Path, processed: Path) -> None:
+    run([CLEAN_BG, "--input", work, "--output", processed])
 
 
-def do_samman_bg(edit: Path) -> None:
-    run([SAMMAN_BG, "--input", edit, "--output", edit])
+def do_samman_bg(processed: Path) -> None:
+    run([SAMMAN_BG, "--input", processed, "--output", processed])
 
 
-def do_csv_bg(edit: Path) -> None:
-    run([CSV_BG, "--input", edit, "--output", edit])
+def do_csv_bg(processed: Path, output: Path) -> None:
+    run([CSV_BG, "--input", processed, "--output", output])
 
 
-def do_clean_sw(work: Path, edit: Path) -> None:
-    run([CLEAN_SW, "--input", work, "--output", edit])
+def do_clean_sw(work: Path, processed: Path) -> None:
+    run([CLEAN_SW, "--input", work, "--output", processed])
 
 
-def do_samman_sw(edit: Path) -> None:
-    run([SAMMAN_SW, "--input", edit, "--output", edit])
+def do_samman_sw(processed: Path) -> None:
+    run([SAMMAN_SW, "--input", processed, "--output", processed])
 
 
-def do_csv_sw(edit: Path) -> None:
-    run([CSV_SW, "--input", edit, "--output", edit])
+def do_csv_sw(processed: Path, output: Path) -> None:
+    run([CSV_SW, "--input", processed, "--output", output])
 
 
-def do_konvertera(edit: Path) -> None:
-    """Konvertera alla CSV i redigeringsmappen till Visma-format.
+def do_konvertera(output: Path) -> None:
+    """Konvertera alla CSV i output-mappen till Visma-format.
 
     visma_konvertera_betalningar.py frågar interaktivt efter indata-/utdatamapp;
-    här matas redigeringsmappen in automatiskt för både in- och utdata."""
-    run([KONV], stdin_text=f"{edit}\n{edit}\n")
+    här matas output-mappen in automatiskt för både in- och utdata."""
+    run([KONV], stdin_text=f"{output}\n{output}\n")
 
 
-def do_register(edit: Path) -> None:
+def do_register(output: Path) -> None:
     """Registrera inbetalningar i Visma från senaste *_visma.csv."""
-    csv_file = latest_visma_csv(edit)
+    csv_file = latest_visma_csv(output)
     if csv_file is None:
-        print(f"\nHittade ingen *_visma.csv i {edit}.")
+        print(f"\nHittade ingen *_visma.csv i {output}.")
         print("Kör steg 7 (Konvertera till Visma-format) först.")
         return
     print(f"\nIndatafil: {csv_file.name}")
@@ -143,8 +144,8 @@ def do_register(edit: Path) -> None:
     run(args)
 
 
-def do_sammanstall_loggar(edit: Path) -> None:
-    print(f"\nTips: körloggarna (visma_inbetalningar_logg_*.csv) ligger i:\n  {edit}")
+def do_sammanstall_loggar(output: Path) -> None:
+    print(f"\nTips: körloggarna (visma_inbetalningar_logg_*.csv) ligger i:\n  {output}")
     run([LOGG])
 
 
@@ -189,7 +190,15 @@ def main() -> int:
     work = ask_folder("Ange arbetsmapp (mappen med råfilerna): ")
 
     while True:
-        edit = (work / "edit") if work else None
+        if work:
+            processed = work / "processed"
+            output = work / "output"
+            # Skapa mapparna automatiskt så att hela kedjan fungerar även
+            # första gången (innan något steg har skrivit till dem).
+            processed.mkdir(parents=True, exist_ok=True)
+            output.mkdir(parents=True, exist_ok=True)
+        else:
+            processed = output = None
         print_menu(work)
         val = input(" Välj: ").strip().lower()
 
@@ -205,34 +214,34 @@ def main() -> int:
         if val in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b"}:
             if not require_work(work):
                 continue
-            assert work is not None and edit is not None
+            assert work is not None and processed is not None and output is not None
             try:
                 if val == "1":
-                    do_clean_bg(work, edit)
+                    do_clean_bg(work, processed)
                 elif val == "2":
-                    do_samman_bg(edit)
+                    do_samman_bg(processed)
                 elif val == "3":
-                    do_csv_bg(edit)
+                    do_csv_bg(processed, output)
                 elif val == "4":
-                    do_clean_sw(work, edit)
+                    do_clean_sw(work, processed)
                 elif val == "5":
-                    do_samman_sw(edit)
+                    do_samman_sw(processed)
                 elif val == "6":
-                    do_csv_sw(edit)
+                    do_csv_sw(processed, output)
                 elif val == "7":
-                    do_konvertera(edit)
+                    do_konvertera(output)
                 elif val == "8":
-                    do_register(edit)
+                    do_register(output)
                 elif val == "9":
-                    do_sammanstall_loggar(edit)
+                    do_sammanstall_loggar(output)
                 elif val == "a":
-                    do_clean_bg(work, edit)
-                    do_samman_bg(edit)
-                    do_csv_bg(edit)
+                    do_clean_bg(work, processed)
+                    do_samman_bg(processed)
+                    do_csv_bg(processed, output)
                 elif val == "b":
-                    do_clean_sw(work, edit)
-                    do_samman_sw(edit)
-                    do_csv_sw(edit)
+                    do_clean_sw(work, processed)
+                    do_samman_sw(processed)
+                    do_csv_sw(processed, output)
             except KeyboardInterrupt:
                 print("\n(avbrutet – tillbaka till menyn)")
             pause()

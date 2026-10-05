@@ -14,7 +14,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 
 BASE_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = BASE_DIR / "edit"
+OUTPUT_DIR = BASE_DIR / "processed"
 TEST_FILE_NAME = "Bg819-5968_Insättningsuppgifter_20260415.xlsx"
 FILE_PATTERN = "Bg*_Insättningsuppgifter_*.xlsx"
 OUTPUT_PREFIX = "clean_bet_lista_"

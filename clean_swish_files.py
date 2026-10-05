@@ -6,7 +6,7 @@ skapar en ny fil clean_swish_lista_<periodslut>.xlsx där perioden står överst
 före själva tabellen.
 
 Körs via dashboard.py (meny), eller fristående från terminalen:
-    python clean_swish_files.py --input "C:\\...\\data" --output "C:\\...\\edit"
+    python clean_swish_files.py --input "C:\\...\\data" --output "C:\\...\\processed"
 """
 from __future__ import annotations
 
@@ -253,12 +253,12 @@ def main() -> int:
         "--output",
         type=Path,
         default=None,
-        help="Mapp att spara rensade filer i. Standard: <input>/edit.",
+        help="Mapp att spara rensade filer i. Standard: <input>/processed.",
     )
     args = parser.parse_args()
 
     input_dir = args.input if args.input is not None else BASE_DIR
-    output_dir = args.output if args.output is not None else (input_dir / "edit")
+    output_dir = args.output if args.output is not None else (input_dir / "processed")
 
     if not input_dir.is_dir():
         print(f"Fel: Indatamappen finns inte: {input_dir}", file=sys.stderr)

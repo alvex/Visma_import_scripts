@@ -7,7 +7,7 @@ Swish-transaktioner. Period och filtotal visas en gång per källfil.
 Eget separat steg - rör inte Bankgiro-flödet.
 
 Körs via dashboard.py (meny), eller fristående:
-    python samla_swish_betalningar.py --input "C:\\...\\output" --output "C:\\...\\output"
+    python samla_swish_betalningar.py --input "C:\\...\\processed" --output "C:\\...\\processed"
 """
 from __future__ import annotations
 

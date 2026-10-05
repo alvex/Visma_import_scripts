@@ -531,11 +531,14 @@ def main() -> int:
     # Datum för filnamnet (--date eller dagens datum).
     date_str = (args.date or "").strip() or dt.date.today().strftime("%Y-%m-%d")
 
-    # Utdatamapp: --output om angiven, annars samma mapp som indatafilen.
+    # Utdatamapp: --output om angiven. Annars: ligger indatafilen i "processed"
+    # sparas den färdiga CSV:n i syskonmappen "output" (samma nivå), i övriga
+    # fall bredvid indatafilen som tidigare.
     if args.output:
         out_dir = Path(args.output.strip().strip('"').strip("'").strip())
     else:
-        out_dir = Path(excel_path).resolve().parent
+        in_dir = Path(excel_path).resolve().parent
+        out_dir = in_dir.parent / "output" if in_dir.name.lower() == "processed" else in_dir
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:  # noqa: BLE001
