@@ -6,6 +6,13 @@ Varje post anger datum, berörda skript, kategori (**Tillagt / Ändrat / Åtgär
 
 ---
 
+## 2026-10-07 – Nytt skript: månadsvis kontrollista över förberedda betalningsposter
+
+- **Berörda skript:** `sammanstall_fakturor.py` (nytt); inga befintliga skript ändrade.
+- **Tillagt:** Sammanställer registrerings-CSV:erna (`betalningar_lista_to_reg_*`, `swish_betalningar_for_registrering_*`) i `WORK\output` till kontrollistan `output\fakturor_lista\fakturor_<mappnamn>.xlsx` (mappnamn = månadsmappen, output-mappens förälder). Perioden är kalendermånaden i betalningsdatum (`--month ÅÅÅÅ-MM` vid behov). Återkommande fakturanummer markeras `Dubblett` på samtliga berörda rader (inom och mellan källfiler, retroaktivt); inga poster tas bort eller slås ihop. Omkörningsskydd via SHA-256 per källfil (ark `Källfiler`): oförändrade filer hoppas över, ändrade rapporteras med returkod 2 utan att läsas om. Felrader (saknat fakturanummer, ogiltigt datum/belopp) hamnar i arket `Felrader` med källfil + radnummer. Atomisk skrivning via temporär fil; låst målfil ger begripligt fel med bevarade data. Även `--dry-run`. Dokumentation i `docs\sammanstall_fakturor.md` + rad i registret.
+- **Verifiering:** `py_compile`; fullständig scenariokörning mot syntetisk testdata (första körning, omkörning utan radändring, komplettering med ny fil, dubblett Bankgiro↔Swish, inledande nollor, svenska/negativa belopp, månadsskifte, felrader, ändrad källfil, låst målfil vid läsning och skrivning, torrkörning) samt skarp körning mot `Fak_2026\sept 01` (11 poster, totalsumma 19 232,00, inga dubbletter). Inga källfiler eller befintliga skript berördes.
+- **Commit:** – (läggs till vid commit)
+
 ## 2026-10-06 – Nytt filflöde: processed/output ersätter edit
 
 - **Berörda skript:** `clean_bankgiro_files.py`, `clean_swish_files.py`, `sammanstall_betalningar.py`, `samla_swish_betalningar.py`, `convert_betalningar_to_csv.py`, `step_4_skapa_swish_csv.py`, `dashboard.py`.

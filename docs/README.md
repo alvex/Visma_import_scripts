@@ -31,6 +31,7 @@ Separata flöden:
 | `clean_swish_files.py` | [clean_swish_files.md](clean_swish_files.md) | Rensar Swish-exporter till `clean_swish_lista_*.xlsx` |
 | `samla_swish_betalningar.py` | [samla_swish_betalningar.md](samla_swish_betalningar.md) | Slår ihop rensade Swish-filer till `samla_swish_bet_lista_*.xlsx` |
 | `step_4_skapa_swish_csv.py` | [step_4_skapa_swish_csv.md](step_4_skapa_swish_csv.md) | Swish-Excel → registrerings-CSV (samma format som Bankgiro) |
+| `sammanstall_fakturor.py` | [sammanstall_fakturor.md](sammanstall_fakturor.md) | Månadsvis kontrollista (`fakturor_<mappnamn>.xlsx`) över förberedda poster med dubblettmarkering |
 | `visma_import\visma_konvertera_betalningar.py` | [visma_konvertera_betalningar.md](visma_konvertera_betalningar.md) | CSV → Visma-kolumnformat (`*_visma.csv`) |
 | `visma_import\visma_register_inbetalningar_fixed.py` | [visma_register_inbetalningar_fixed.md](visma_register_inbetalningar_fixed.md) | Halvautomatisk inbetalningsregistrering i Visma Compact 6 (dry-run/`--live`) |
 | `visma_import\visma_sammanstall_loggar.py` | [visma_sammanstall_loggar.md](visma_sammanstall_loggar.md) | Månadssammanställning av körloggar, dubblettrensning, avstämning |
